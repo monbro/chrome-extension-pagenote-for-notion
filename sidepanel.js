@@ -282,15 +282,50 @@ class NoteEditor {
 
     try {
       const content = this.elements.editor.innerHTML;
+      
+      // Get page title from current tab
+      let pageTitle = '';
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs[0]?.title) {
+          pageTitle = tabs[0].title;
+        }
+      } catch (error) {
+        console.debug('Could not get page title:', error);
+      }
+      
+      // Prepare data to save
+      const dataToSave = { [this.currentUrl]: content };
+      
+      // Save title separately with prefix
+      if (pageTitle) {
+        const titleKey = `title:${this.currentUrl}`;
+        dataToSave[titleKey] = pageTitle;
+      }
+      
       // Use sync storage for persistence across extension disable/enable
-      await chrome.storage.sync.set({ [this.currentUrl]: content });
+      await chrome.storage.sync.set(dataToSave);
       this.showStatus('Gespeichert');
     } catch (error) {
       console.error('Error saving note:', error);
       // If sync storage quota exceeded, fall back to local storage
       if (error.message && error.message.includes('QUOTA_BYTES')) {
         try {
-          await chrome.storage.local.set({ [this.currentUrl]: content });
+          const content = this.elements.editor.innerHTML;
+          const dataToSave = { [this.currentUrl]: content };
+          
+          // Try to get and save title
+          try {
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tabs[0]?.title) {
+              const titleKey = `title:${this.currentUrl}`;
+              dataToSave[titleKey] = tabs[0].title;
+            }
+          } catch (titleError) {
+            // Ignore title error in fallback
+          }
+          
+          await chrome.storage.local.set(dataToSave);
           this.showStatus('Gespeichert (lokal)');
         } catch (localError) {
           this.showStatus('Fehler beim Speichern', true);
@@ -327,36 +362,55 @@ class NoteEditor {
 
     try {
       this.currentUrl = url;
-      this.updateUrlDisplay(url);
       
-      // Try sync storage first, fall back to local storage for migration
-      let data = await chrome.storage.sync.get(url);
+      // Load note content and title
+      const titleKey = `title:${url}`;
+      let data = await chrome.storage.sync.get([url, titleKey]);
+      
       if (!data[url]) {
         // Check local storage for migration
-        const localData = await chrome.storage.local.get(url);
+        const localData = await chrome.storage.local.get([url, titleKey]);
         if (localData[url]) {
           // Migrate from local to sync
-          await chrome.storage.sync.set({ [url]: localData[url] });
-          data = { [url]: localData[url] };
+          const migrateData = { [url]: localData[url] };
+          if (localData[titleKey]) {
+            migrateData[titleKey] = localData[titleKey];
+          }
+          await chrome.storage.sync.set(migrateData);
+          data = migrateData;
         }
       }
+      
       this.elements.editor.innerHTML = data[url] || '';
+      
+      // Update display with URL and title if available
+      this.updateUrlDisplay(url, data[titleKey]);
     } catch (error) {
       console.error('Error loading note:', error);
       this.showStatus('Fehler beim Laden', true);
     }
   }
 
-  updateUrlDisplay(url) {
+  updateUrlDisplay(url, pageTitle = null) {
     try {
       const urlObj = new URL(url);
       const domain = urlObj.hostname.replace('www.', '');
       this.elements.domainLabel.textContent = `Notizen für ${domain}`;
-      this.elements.urlLabel.textContent = url;
+      
+      // Show title if available, otherwise show URL
+      if (pageTitle) {
+        this.elements.urlLabel.textContent = `${pageTitle} - ${url}`;
+      } else {
+        this.elements.urlLabel.textContent = url;
+      }
     } catch (error) {
       // Fallback if URL parsing fails
       this.elements.domainLabel.textContent = 'Notizen';
-      this.elements.urlLabel.textContent = url;
+      if (pageTitle) {
+        this.elements.urlLabel.textContent = `${pageTitle} - ${url}`;
+      } else {
+        this.elements.urlLabel.textContent = url;
+      }
     }
   }
 
@@ -381,24 +435,42 @@ class NoteEditor {
       
       // Combine and filter out non-note keys
       const allNotes = {};
+      const allTitles = {};
       const noteKeys = ['enabledDomains']; // Keys to exclude
       
+      // Process sync data
       Object.keys(syncData).forEach(key => {
-        if (!noteKeys.includes(key) && key.startsWith('http')) {
-          allNotes[key] = syncData[key];
+        if (!noteKeys.includes(key)) {
+          if (key.startsWith('http')) {
+            allNotes[key] = syncData[key];
+          } else if (key.startsWith('title:http')) {
+            // Extract URL from title key
+            const url = key.replace('title:', '');
+            allTitles[url] = syncData[key];
+          }
         }
       });
       
+      // Process local data (only if not in sync)
       Object.keys(localData).forEach(key => {
-        if (!noteKeys.includes(key) && key.startsWith('http') && !allNotes[key]) {
-          allNotes[key] = localData[key];
+        if (!noteKeys.includes(key)) {
+          if (key.startsWith('http') && !allNotes[key]) {
+            allNotes[key] = localData[key];
+          } else if (key.startsWith('title:http')) {
+            const url = key.replace('title:', '');
+            if (!allTitles[url]) {
+              allTitles[url] = localData[key];
+            }
+          }
         }
       });
       
+      // Structure export data with notes and titles
       const exportData = {
-        version: '1.6',
+        version: '1.7',
         exportDate: new Date().toISOString(),
-        notes: allNotes
+        notes: allNotes,
+        titles: allTitles
       };
       
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -423,30 +495,47 @@ class NoteEditor {
       const text = await file.text();
       const importData = JSON.parse(text);
       
-      if (!importData.notes || typeof importData.notes !== 'object') {
+      // Support both old format (just notes) and new format (notes + titles)
+      const notes = importData.notes || importData;
+      const titles = importData.titles || {};
+      
+      if (!notes || typeof notes !== 'object') {
         throw new Error('Ungültiges Dateiformat');
       }
       
-      // Import notes to sync storage
-      const notesToImport = {};
-      Object.keys(importData.notes).forEach(url => {
+      // Import notes and titles to sync storage
+      const dataToImport = {};
+      
+      // Import notes
+      Object.keys(notes).forEach(url => {
         if (url.startsWith('http')) {
-          notesToImport[url] = importData.notes[url];
+          dataToImport[url] = notes[url];
+          
+          // Import title if available
+          if (titles[url]) {
+            const titleKey = `title:${url}`;
+            dataToImport[titleKey] = titles[url];
+          }
         }
       });
       
-      if (Object.keys(notesToImport).length === 0) {
+      if (Object.keys(dataToImport).length === 0) {
         throw new Error('Keine gültigen Notizen gefunden');
       }
       
-      await chrome.storage.sync.set(notesToImport);
+      await chrome.storage.sync.set(dataToImport);
       
       // Reload current note if it was imported
-      if (this.currentUrl && notesToImport[this.currentUrl]) {
-        this.elements.editor.innerHTML = notesToImport[this.currentUrl];
+      if (this.currentUrl && dataToImport[this.currentUrl]) {
+        this.elements.editor.innerHTML = dataToImport[this.currentUrl];
+        const titleKey = `title:${this.currentUrl}`;
+        if (dataToImport[titleKey]) {
+          this.updateUrlDisplay(this.currentUrl, dataToImport[titleKey]);
+        }
       }
       
-      this.showStatus(`${Object.keys(notesToImport).length} Notizen importiert`);
+      const noteCount = Object.keys(notes).filter(url => url.startsWith('http')).length;
+      this.showStatus(`${noteCount} Notizen importiert`);
     } catch (error) {
       console.error('Error importing notes:', error);
       this.showStatus('Fehler beim Import: ' + error.message, true);
@@ -470,7 +559,7 @@ class NoteEditor {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const shortcutKey = isMac ? 'Cmd' : 'Ctrl';
     
-    const message = `URL Context Notes v1.6\n\n` +
+    const message = `URL Context Notes v1.7\n\n` +
       `Speichern Sie Notizen für jede URL.\n` +
       `Notizen werden automatisch gespeichert.\n\n` +
       `Formatierung: Verwenden Sie die Toolbar-Buttons für Textformatierung.\n\n` +
