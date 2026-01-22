@@ -13,7 +13,7 @@ class SidePanelManager {
 
   async init() {
     try {
-      // Configure side panel to open on icon click
+      // Enable automatic opening - it will only open on tabs where panel is enabled
       await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
       
       // Load saved domain states
@@ -24,6 +24,8 @@ class SidePanelManager {
       
       // Initialize panel state on install
       chrome.runtime.onInstalled.addListener(() => this.handleInstall());
+      
+      console.log('SidePanelManager initialized');
     } catch (error) {
       console.error('Error initializing side panel:', error);
     }
@@ -43,8 +45,17 @@ class SidePanelManager {
       }
     });
     
-    // Handle icon click to toggle panel for domain
-    chrome.action.onClicked.addListener((tab) => this.handleActionClick(tab));
+    // Handle icon click - this fires BEFORE Chrome tries to open the panel
+    // We use this to enable the panel for new domains
+    if (chrome.action && chrome.action.onClicked) {
+      chrome.action.onClicked.addListener(async (tab) => {
+        console.log('Extension icon clicked, tab:', tab);
+        await this.handleActionClick(tab);
+      });
+      console.log('Action click listener registered');
+    } else {
+      console.error('chrome.action.onClicked is not available');
+    }
   }
 
   async handleInstall() {
@@ -58,7 +69,17 @@ class SidePanelManager {
 
   async loadDomainStates() {
     try {
-      const data = await chrome.storage.local.get(this.storageKey);
+      // Try sync storage first, fall back to local for migration
+      let data = await chrome.storage.sync.get(this.storageKey);
+      if (!data[this.storageKey]) {
+        // Check local storage for migration
+        const localData = await chrome.storage.local.get(this.storageKey);
+        if (localData[this.storageKey]) {
+          // Migrate from local to sync
+          await chrome.storage.sync.set({ [this.storageKey]: localData[this.storageKey] });
+          data = localData;
+        }
+      }
       const domains = data[this.storageKey] || [];
       this.enabledDomains = new Set(domains);
       
@@ -71,11 +92,22 @@ class SidePanelManager {
 
   async saveDomainStates() {
     try {
-      await chrome.storage.local.set({
+      // Use sync storage for persistence across extension disable/enable
+      await chrome.storage.sync.set({
         [this.storageKey]: Array.from(this.enabledDomains)
       });
     } catch (error) {
       console.error('Error saving domain states:', error);
+      // If sync storage quota exceeded, fall back to local storage
+      if (error.message && error.message.includes('QUOTA_BYTES')) {
+        try {
+          await chrome.storage.local.set({
+            [this.storageKey]: Array.from(this.enabledDomains)
+          });
+        } catch (localError) {
+          console.error('Error saving to local storage:', localError);
+        }
+      }
     }
   }
 
@@ -170,9 +202,30 @@ class SidePanelManager {
       const tab = await chrome.tabs.get(activeInfo.tabId);
       if (tab.url) {
         await this.handleTabUpdated(tab);
+        // Also ensure panel is ready for immediate opening
+        await this.ensurePanelReadyForTab(tab);
       }
     } catch (error) {
       console.error('Error handling tab activation:', error);
+    }
+  }
+  
+  // Ensure panel is ready for a tab (enabled if domain is enabled)
+  async ensurePanelReadyForTab(tab) {
+    if (!tab || !tab.url) return;
+    
+    const domain = this.extractDomain(tab.url);
+    if (domain && this.enabledDomains.has(domain)) {
+      // Panel should already be enabled via handleTabUpdated, but ensure it
+      try {
+        await chrome.sidePanel.setOptions({
+          tabId: tab.id,
+          path: 'sidepanel.html',
+          enabled: true
+        });
+      } catch (error) {
+        // Ignore errors
+      }
     }
   }
 
@@ -182,17 +235,47 @@ class SidePanelManager {
     const domain = this.extractDomain(tab.url);
     if (domain) {
       const enabled = this.enabledDomains.has(domain);
+      // CRITICAL: Always ensure panel state is correct for this tab
+      // This ensures the panel is ready when the user clicks the icon
+      // With openPanelOnActionClick: true, Chrome will open it automatically if enabled
       await this.applyPanelStateToTab(tab.id, domain, enabled);
     } else {
       // Disable for special URLs
       await this.applyPanelStateToTab(tab.id, null, false);
     }
   }
+  
+  // Helper to enable panel for a tab immediately (for new domains)
+  async enablePanelForTabImmediately(tabId) {
+    try {
+      await chrome.sidePanel.setOptions({
+        tabId: tabId,
+        path: 'sidepanel.html',
+        enabled: true
+      });
+    } catch (error) {
+      console.error('Error enabling panel immediately:', error);
+    }
+  }
 
   async handleActionClick(tab) {
     try {
+      // Get the active tab if not provided
+      if (!tab || !tab.id) {
+        try {
+          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (activeTab) {
+            tab = activeTab;
+          } else {
+            return;
+          }
+        } catch (error) {
+          console.error('Error getting active tab:', error);
+          return;
+        }
+      }
+
       const domain = this.extractDomain(tab.url);
-      
       if (!domain) {
         // Can't enable for special URLs
         return;
@@ -201,19 +284,33 @@ class SidePanelManager {
       const isEnabled = this.enabledDomains.has(domain);
 
       if (!isEnabled) {
-        // Enable panel for this domain
+        // FIRST CLICK: Enable panel for this domain
+        // This implements the "2-click" pattern from the old version
         this.enabledDomains.add(domain);
         await this.saveDomainStates();
+        
+        // Enable panel for the current tab
+        await chrome.sidePanel.setOptions({
+          tabId: tab.id,
+          path: 'sidepanel.html',
+          enabled: true
+        });
+        
+        // Enable for all other tabs with this domain
         await this.applyDomainStateToAllTabs(domain, true);
-        // Panel will open automatically due to openPanelOnActionClick
-      } else {
-        // Disable panel for this domain
-        this.enabledDomains.delete(domain);
-        await this.saveDomainStates();
-        await this.applyDomainStateToAllTabs(domain, false);
+        
+        // Now manually open the panel (since this is the "enable" click)
+        // The next click will use Chrome's auto-open
+        try {
+          await chrome.sidePanel.open({ tabId: tab.id });
+        } catch (error) {
+          // Might fail if Chrome is already trying to open it, that's OK
+        }
       }
+      // If domain is already enabled, Chrome will handle open/close automatically
+      // due to openPanelOnActionClick: true
     } catch (error) {
-      console.error('Error handling action click:', error);
+      console.error('Error in handleActionClick:', error);
     }
   }
 }

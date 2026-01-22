@@ -14,16 +14,53 @@ class NoteEditor {
       urlLabel: document.getElementById('url-label'),
       domainLabel: document.getElementById('domain-label'),
       statusMsg: document.getElementById('status'),
-      infoBtn: document.getElementById('close-btn')
+      infoBtn: document.getElementById('close-btn'),
+      exportBtn: document.getElementById('export-btn'),
+      importBtn: document.getElementById('import-btn')
     };
 
     this.init();
   }
 
-  init() {
+  async init() {
     this.setupEventListeners();
+    await this.migrateFromLocalStorage();
     this.loadCurrentTabNote();
     this.setupPlaceholder();
+  }
+
+  async migrateFromLocalStorage() {
+    try {
+      // Migrate all notes from local to sync storage
+      const localData = await chrome.storage.local.get(null);
+      const notesToMigrate = {};
+      const noteKeys = ['enabledDomains']; // Keys to exclude
+      
+      Object.keys(localData).forEach(key => {
+        if (!noteKeys.includes(key) && key.startsWith('http')) {
+          notesToMigrate[key] = localData[key];
+        }
+      });
+      
+      if (Object.keys(notesToMigrate).length > 0) {
+        // Check if already in sync storage
+        const syncData = await chrome.storage.sync.get(Object.keys(notesToMigrate));
+        const newNotes = {};
+        
+        Object.keys(notesToMigrate).forEach(key => {
+          if (!syncData[key]) {
+            newNotes[key] = notesToMigrate[key];
+          }
+        });
+        
+        if (Object.keys(newNotes).length > 0) {
+          await chrome.storage.sync.set(newNotes);
+          console.log(`Migrated ${Object.keys(newNotes).length} notes to sync storage`);
+        }
+      }
+    } catch (error) {
+      console.error('Error migrating from local storage:', error);
+    }
   }
 
   setupPlaceholder() {
@@ -67,6 +104,19 @@ class NoteEditor {
     if (this.elements.infoBtn) {
       this.elements.infoBtn.addEventListener('click', () => this.showInfo());
     }
+
+    // Export button
+    if (this.elements.exportBtn) {
+      this.elements.exportBtn.addEventListener('click', () => this.exportNotes());
+    }
+
+    // Import button
+    if (this.elements.importBtn) {
+      this.elements.importBtn.addEventListener('click', () => this.handleImportClick());
+    }
+
+    // Keyboard shortcuts
+    this.elements.editor.addEventListener('keydown', (e) => this.handleKeyDown(e));
   }
 
   formatText(command) {
@@ -75,6 +125,141 @@ class NoteEditor {
       this.elements.editor.focus();
     } catch (error) {
       console.error('Error formatting text:', error);
+    }
+  }
+
+  handleKeyDown(e) {
+    // Cmd+Shift+8 (Mac) or Ctrl+Shift+8 (Windows/Linux)
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const modifier = isMac ? e.metaKey : e.ctrlKey;
+    
+    if (modifier && e.shiftKey && e.key === '8') {
+      e.preventDefault();
+      this.toggleListItem();
+    }
+  }
+
+  toggleListItem() {
+    try {
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+
+      const range = selection.getRangeAt(0);
+      const editor = this.elements.editor;
+      
+      // Find the current block element (p, div, li, etc.)
+      let currentNode = range.commonAncestorContainer;
+      
+      // Walk up to find a block element
+      while (currentNode && currentNode !== editor) {
+        if (currentNode.nodeType === Node.ELEMENT_NODE) {
+          const tagName = currentNode.tagName.toLowerCase();
+          if (['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+            break;
+          }
+        }
+        currentNode = currentNode.parentNode;
+      }
+
+      // Check if we're in a list item
+      const isListItem = currentNode && currentNode.tagName && currentNode.tagName.toLowerCase() === 'li';
+      
+      if (isListItem) {
+        // TOGGLE OFF: Convert list item back to paragraph
+        const listItem = currentNode;
+        const listParent = listItem.parentNode;
+        const textContent = listItem.textContent || listItem.innerText || '';
+        
+        // Create a new paragraph
+        const paragraph = document.createElement('p');
+        paragraph.textContent = textContent;
+        
+        // Replace the list item with the paragraph
+        listParent.replaceChild(paragraph, listItem);
+        
+        // If the list is now empty, remove it
+        if (listParent.tagName && listParent.tagName.toLowerCase() === 'ul' && listParent.children.length === 0) {
+          listParent.parentNode.removeChild(listParent);
+        }
+        
+        // Move cursor to the new paragraph
+        const newRange = document.createRange();
+        newRange.selectNodeContents(paragraph);
+        newRange.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+        
+        this.elements.editor.focus();
+      } else {
+        // TOGGLE ON: Convert current line to list item
+        // Select the current paragraph/block
+        if (currentNode && currentNode.nodeType === Node.ELEMENT_NODE) {
+          const tempRange = document.createRange();
+          tempRange.selectNodeContents(currentNode);
+          selection.removeAllRanges();
+          selection.addRange(tempRange);
+        }
+
+        // Insert unordered list (this will wrap the selected content in a list)
+        document.execCommand('insertUnorderedList', false, null);
+        
+        // Move cursor to the end of the new list item
+        try {
+          const newRange = document.createRange();
+          const listItems = editor.querySelectorAll('li');
+          if (listItems.length > 0) {
+            // Find the list item that contains our content
+            let targetLi = null;
+            for (const li of listItems) {
+              if (li.textContent && li.textContent.trim()) {
+                targetLi = li;
+                break;
+              }
+            }
+            if (!targetLi && listItems.length > 0) {
+              targetLi = listItems[listItems.length - 1];
+            }
+            
+            if (targetLi) {
+              newRange.selectNodeContents(targetLi);
+              newRange.collapse(false);
+              selection.removeAllRanges();
+              selection.addRange(newRange);
+            }
+          }
+        } catch (err) {
+          // Fallback: just focus the editor
+          this.elements.editor.focus();
+        }
+
+        this.elements.editor.focus();
+      }
+    } catch (error) {
+      console.error('Error toggling list item:', error);
+      // Fallback: use execCommand
+      try {
+        // Try to detect if we're in a list and remove it, otherwise add it
+        const selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          let node = range.commonAncestorContainer;
+          while (node && node !== this.elements.editor) {
+            if (node.nodeType === Node.ELEMENT_NODE && node.tagName && node.tagName.toLowerCase() === 'li') {
+              // In a list item, remove list formatting
+              document.execCommand('outdent', false, null);
+              break;
+            }
+            node = node.parentNode;
+          }
+          // If not in a list, add list formatting
+          if (!node || node === this.elements.editor) {
+            document.execCommand('insertUnorderedList', false, null);
+          }
+        }
+        this.elements.editor.focus();
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+      }
     }
   }
 
@@ -97,11 +282,22 @@ class NoteEditor {
 
     try {
       const content = this.elements.editor.innerHTML;
-      await chrome.storage.local.set({ [this.currentUrl]: content });
+      // Use sync storage for persistence across extension disable/enable
+      await chrome.storage.sync.set({ [this.currentUrl]: content });
       this.showStatus('Gespeichert');
     } catch (error) {
       console.error('Error saving note:', error);
-      this.showStatus('Fehler beim Speichern', true);
+      // If sync storage quota exceeded, fall back to local storage
+      if (error.message && error.message.includes('QUOTA_BYTES')) {
+        try {
+          await chrome.storage.local.set({ [this.currentUrl]: content });
+          this.showStatus('Gespeichert (lokal)');
+        } catch (localError) {
+          this.showStatus('Fehler beim Speichern', true);
+        }
+      } else {
+        this.showStatus('Fehler beim Speichern', true);
+      }
     }
   }
 
@@ -133,7 +329,17 @@ class NoteEditor {
       this.currentUrl = url;
       this.updateUrlDisplay(url);
       
-      const data = await chrome.storage.local.get(url);
+      // Try sync storage first, fall back to local storage for migration
+      let data = await chrome.storage.sync.get(url);
+      if (!data[url]) {
+        // Check local storage for migration
+        const localData = await chrome.storage.local.get(url);
+        if (localData[url]) {
+          // Migrate from local to sync
+          await chrome.storage.sync.set({ [url]: localData[url] });
+          data = { [url]: localData[url] };
+        }
+      }
       this.elements.editor.innerHTML = data[url] || '';
     } catch (error) {
       console.error('Error loading note:', error);
@@ -166,11 +372,111 @@ class NoteEditor {
     }
   }
 
+  async exportNotes() {
+    try {
+      // Get all notes from sync storage
+      const syncData = await chrome.storage.sync.get(null);
+      // Also check local storage for any remaining notes
+      const localData = await chrome.storage.local.get(null);
+      
+      // Combine and filter out non-note keys
+      const allNotes = {};
+      const noteKeys = ['enabledDomains']; // Keys to exclude
+      
+      Object.keys(syncData).forEach(key => {
+        if (!noteKeys.includes(key) && key.startsWith('http')) {
+          allNotes[key] = syncData[key];
+        }
+      });
+      
+      Object.keys(localData).forEach(key => {
+        if (!noteKeys.includes(key) && key.startsWith('http') && !allNotes[key]) {
+          allNotes[key] = localData[key];
+        }
+      });
+      
+      const exportData = {
+        version: '1.6',
+        exportDate: new Date().toISOString(),
+        notes: allNotes
+      };
+      
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sticky-notes-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      this.showStatus('Export erfolgreich');
+    } catch (error) {
+      console.error('Error exporting notes:', error);
+      this.showStatus('Fehler beim Export', true);
+    }
+  }
+
+  async importNotes(file) {
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+      
+      if (!importData.notes || typeof importData.notes !== 'object') {
+        throw new Error('Ungültiges Dateiformat');
+      }
+      
+      // Import notes to sync storage
+      const notesToImport = {};
+      Object.keys(importData.notes).forEach(url => {
+        if (url.startsWith('http')) {
+          notesToImport[url] = importData.notes[url];
+        }
+      });
+      
+      if (Object.keys(notesToImport).length === 0) {
+        throw new Error('Keine gültigen Notizen gefunden');
+      }
+      
+      await chrome.storage.sync.set(notesToImport);
+      
+      // Reload current note if it was imported
+      if (this.currentUrl && notesToImport[this.currentUrl]) {
+        this.elements.editor.innerHTML = notesToImport[this.currentUrl];
+      }
+      
+      this.showStatus(`${Object.keys(notesToImport).length} Notizen importiert`);
+    } catch (error) {
+      console.error('Error importing notes:', error);
+      this.showStatus('Fehler beim Import: ' + error.message, true);
+    }
+  }
+
+  handleImportClick() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        this.importNotes(file);
+      }
+    };
+    input.click();
+  }
+
   showInfo() {
-    const message = `URL Context Notes v1.5\n\n` +
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const shortcutKey = isMac ? 'Cmd' : 'Ctrl';
+    
+    const message = `URL Context Notes v1.6\n\n` +
       `Speichern Sie Notizen für jede URL.\n` +
       `Notizen werden automatisch gespeichert.\n\n` +
-      `Formatierung: Verwenden Sie die Toolbar-Buttons für Textformatierung.`;
+      `Formatierung: Verwenden Sie die Toolbar-Buttons für Textformatierung.\n\n` +
+      `Tastenkürzel:\n` +
+      `${shortcutKey}+Shift+8 - Listenpunkt für aktuelle Zeile ein/ausschalten\n\n` +
+      `Datenpersistenz: Notizen werden in Chrome Sync gespeichert und bleiben erhalten, wenn die Erweiterung deaktiviert wird. Für vollständige Sicherheit können Sie Ihre Notizen exportieren.`;
     
     alert(message);
   }
