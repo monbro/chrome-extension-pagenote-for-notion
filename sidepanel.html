@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="header">
+    <div class="header-top">
+      <h3 id="domain-label">Notizen</h3>
+      <button id="close-btn" title="Info">i</button>
+    </div>
+    <small id="url-label">Lädt...</small>
+  </div>
+
+  <div class="toolbar">
+    <button id="btn-bold" title="Fett"><b>B</b></button>
+    <button id="btn-italic" title="Kursiv"><i>I</i></button>
+    <button id="btn-underline" title="Unterstrichen"><u>U</u></button>
+    <button id="btn-list" title="Liste">• Liste</button>
+    <button id="btn-outdent" title="Ausrücken">←</button>
+    <button id="btn-indent" title="Einrücken">→</button>
+  </div>
+
+  <div id="note-editor" contenteditable="true" placeholder="Notiz für diese URL..."></textarea></div>
+
+  <div id="status">Gespeichert</div>
+</body>
+<script src="sidepanel.js"></script>
+</html>
