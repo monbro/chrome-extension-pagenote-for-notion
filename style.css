@@ -65,11 +65,16 @@ body {
 }
 
 #url-label {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11px;
   color: #666;
-  word-break: break-all;
+  word-break: break-word;
   line-height: 1.4;
+  max-height: calc(1.4em * 2); /* 2 lines based on line-height */
 }
 
 /* ===== Toolbar Styles ===== */
