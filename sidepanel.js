@@ -27,6 +27,7 @@ class NoteEditor {
     await this.migrateFromLocalStorage();
     this.loadCurrentTabNote();
     this.setupPlaceholder();
+    this.injectDashboardButton();
   }
 
   async migrateFromLocalStorage() {
@@ -67,6 +68,25 @@ class NoteEditor {
     const placeholder = this.elements.editor.getAttribute('data-placeholder');
     if (placeholder) {
       this.elements.editor.setAttribute('data-placeholder', placeholder);
+    }
+  }
+
+  injectDashboardButton() {
+    // Find the toolbar by looking for one of the existing buttons
+    const exportBtn = this.elements.exportBtn;
+    if (exportBtn && exportBtn.parentNode) {
+      const dashboardBtn = document.createElement('button');
+      dashboardBtn.id = 'dashboard-btn';
+      dashboardBtn.innerHTML = '📊'; // Chart icon
+      dashboardBtn.title = 'Open Notes Dashboard';
+      dashboardBtn.style.marginRight = '2px';
+      
+      dashboardBtn.addEventListener('click', () => {
+        chrome.runtime.openOptionsPage();
+      });
+      
+      // Insert before the export button
+      exportBtn.parentNode.insertBefore(dashboardBtn, exportBtn);
     }
   }
 
@@ -117,6 +137,17 @@ class NoteEditor {
 
     // Keyboard shortcuts
     this.elements.editor.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+    // Listen for storage changes (e.g. from Context Menu additions)
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (this.currentUrl && changes[this.currentUrl]) {
+        const newValue = changes[this.currentUrl].newValue;
+        // Only update if the content is actually different to avoid cursor jumping
+        if (newValue !== this.elements.editor.innerHTML) {
+          this.elements.editor.innerHTML = newValue || '';
+        }
+      }
+    });
   }
 
   formatText(command) {

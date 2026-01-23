@@ -25,6 +25,9 @@ class SidePanelManager {
       // Initialize panel state on install
       chrome.runtime.onInstalled.addListener(() => this.handleInstall());
       
+      // Setup context menu
+      this.setupContextMenu();
+      
       console.log('SidePanelManager initialized');
     } catch (error) {
       console.error('Error initializing side panel:', error);
@@ -56,14 +59,91 @@ class SidePanelManager {
     } else {
       console.error('chrome.action.onClicked is not available');
     }
+
+    // Handle context menu clicks
+    if (chrome.contextMenus) {
+      chrome.contextMenus.onClicked.addListener((info, tab) => this.handleContextMenuClick(info, tab));
+    }
+
+    // Handle messages from content script (e.g. opening panel from notification)
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.action === 'open_side_panel' && sender.tab) {
+        this.handleOpenPanelRequest(sender.tab);
+      }
+    });
+  }
+
+  setupContextMenu() {
+    // Create the context menu item
+    // We use chrome.runtime.onInstalled in handleInstall, but we can also ensure it exists here
+    chrome.contextMenus.create({
+      id: "add-to-note",
+      title: "Add selection to note",
+      contexts: ["selection"]
+    }, () => {
+      // Ignore error if item already exists
+      if (chrome.runtime.lastError) {
+        // Menu item might already exist
+      }
+    });
   }
 
   async handleInstall() {
     try {
       // Disable panel globally on install
       await chrome.sidePanel.setOptions({ enabled: false });
+      
+      // Re-create context menu on install/update to ensure it's there
+      chrome.contextMenus.removeAll(() => {
+        this.setupContextMenu();
+      });
     } catch (error) {
       console.error('Error during installation:', error);
+    }
+  }
+
+  async handleContextMenuClick(info, tab) {
+    if (info.menuItemId === "add-to-note" && info.selectionText && tab.url) {
+      try {
+        const url = tab.url;
+        const textToAdd = `<p>${info.selectionText}</p>`;
+        
+        // Try to get existing note from sync
+        let data = await chrome.storage.sync.get(url);
+        let currentNote = data[url] || "";
+        
+        // If not in sync, check local (fallback logic similar to sidepanel.js)
+        if (!currentNote) {
+          const localData = await chrome.storage.local.get(url);
+          if (localData[url]) {
+            currentNote = localData[url];
+          }
+        }
+
+        const newNote = currentNote + textToAdd;
+        
+        // Save back to sync (or local if quota exceeded logic could be added here)
+        await chrome.storage.sync.set({ [url]: newNote });
+        
+      } catch (error) {
+        console.error('Error adding to note from context menu:', error);
+      }
+    }
+  }
+
+  async handleOpenPanelRequest(tab) {
+    try {
+      // Enable panel for this tab specifically so it can be opened
+      await chrome.sidePanel.setOptions({
+        tabId: tab.id,
+        path: 'sidepanel.html',
+        enabled: true
+      });
+      
+      // Open the panel
+      await chrome.sidePanel.open({ tabId: tab.id, windowId: tab.windowId });
+    } catch (error) {
+      console.error('Error opening panel from request:', error);
     }
   }
 

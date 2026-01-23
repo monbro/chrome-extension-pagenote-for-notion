@@ -2,7 +2,7 @@
 
 A Chrome/Brave extension that allows you to save and manage sticky notes for specific URLs. Each webpage gets its own dedicated note that persists across sessions, making it perfect for research, documentation, and keeping track of important information.
 
-![Version](https://img.shields.io/badge/version-1.7-blue.svg)
+![Version](https://img.shields.io/badge/version-1.8-blue.svg)
 ![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
@@ -18,6 +18,19 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 - Bullet lists support
 - Indent/Outdent functionality
 - Full contenteditable editor with HTML support
+
+### 🖱️ Context Menu Integration
+- Select any text on a webpage
+- Right-click and choose "Add selection to note" to instantly append text to that page's note
+
+### 📊 Notes Dashboard
+- View all your notes in one place
+- Search and filter notes by content, title, or URL
+- Delete old or unused notes
+
+### 🔔 Smart Notifications
+- Subtle "Note available" indicator when visiting pages with existing notes
+- Click the notification to quickly open the side panel
 
 ### ⌨️ Keyboard Shortcuts
 - **Cmd+Shift+8** (Mac) / **Ctrl+Shift+8** (Windows/Linux): Toggle list item for current line
@@ -65,6 +78,16 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 - **Format Text**: Use the toolbar buttons to format your text (Bold, Italic, Underline)
 - **Create Lists**: Click the "• Liste" button or use `Cmd+Shift+8` / `Ctrl+Shift+8` to toggle list items
 - **Indent/Outdent**: Use the arrow buttons to adjust indentation
+
+### Using the Dashboard
+
+- Click the "📊" chart icon in the side panel toolbar to open the Dashboard
+- Here you can view, search, and manage all your saved notes across all domains
+
+### Context Menu
+
+- Highlight text on any webpage
+- Right-click and select "Add selection to note" to append the text to the current note
 
 ### Export & Import
 
@@ -130,6 +153,9 @@ chrome-extension-sticky-notes-to-page/
 ├── background.js          # Service worker (domain management)
 ├── sidepanel.html         # Side panel UI
 ├── sidepanel.js           # Note editor logic
+├── dashboard.js           # Dashboard/Options page logic
+├── content.js             # Content script for notifications
+├── content.css            # Styles for notifications
 ├── style.css              # Styling (with dark mode support)
 ├── icon.png               # Extension icon
 └── README.md              # This file
@@ -157,6 +183,12 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Changelog
+
+### Version 1.8
+- Added Notes Dashboard for central management
+- Added Context Menu integration ("Add selection to note")
+- Added on-page notifications for existing notes
+- Added search and filter functionality in Dashboard
 
 ### Version 1.7
 - Added page title storage alongside URLs
