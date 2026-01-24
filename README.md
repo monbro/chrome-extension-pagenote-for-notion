@@ -12,7 +12,10 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 🚀 **Notion Integration** - Your notes are now stored in your Notion workspace instead of browser storage
 ☁️ **Cloud Sync** - Access your notes from any device
 🔐 **Better Privacy** - Your data stays in your Notion account
-📱 **Multi-Device** - View and edit notes from desktop, tablet, or mobile via Notion
+� **Smart Save Status** - Real-time indicators showing when notes are saving/saved/unsaved
+🔗 **Notion Direct Links** - Open notes directly in Notion with one click
+📊 **Domain-Smart Panel** - Side panel automatically closes when switching to different domains
+�📱 **Multi-Device** - View and edit notes from desktop, tablet, or mobile via Notion
 
 ## Quick Setup
 
@@ -31,45 +34,54 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 
 ### 📝 URL-Specific Notes
 - Each URL has its own dedicated note in your Notion database
-- Notes are automatically saved as you type
-- Domain-based organization - all tabs on the same domain share the panel state
+- Notes are automatically saved as you type (with 500ms debounce)
+- Domain-based organization - all tabs on the same domain can access the panel
+- Editor is disabled while loading content from Notion (prevents editing empty notes)
+
+### 💾 Smart Save Status Indicator
+- **⏳ Loading** (gray) - Content is being loaded from Notion
+- **💾 Saving** (orange, with pulse animation) - Note is being saved
+- **✅ Saved** (green) - Note successfully saved
+- **⭕ Unsaved** (red) - You have unsaved changes
+- **❌ Error** (red) - Failed to save (with error message)
 
 ### 🎨 Rich Text Editing
 - **Bold**, *Italic*, and <u>Underline</u> formatting
 - Bullet lists support
 - Indent/Outdent functionality
 - Full contenteditable editor with HTML support
+- Beautiful toolbar with intuitive icons
 
 ### 🖱️ Context Menu Integration
 - Select any text on a webpage
 - Right-click and choose "Add selection to note" to instantly append text to that page's note
+- Text is formatted as a paragraph and automatically saved
 
 ### 📊 Notes Dashboard
-- View all your notes in one place
+- View all your notes in one place with card layout
 - Search and filter notes by content, title, or URL
+- Open Website - Jump to the original webpage
+- View in Notion - Open the note entry directly in your Notion database
 - Delete old or unused notes
-- Each note links directly to the website
+- Beautiful, responsive grid layout
 
-### 🔔 Smart Notifications
-- Subtle "Note available" indicator when visiting pages with existing notes
-- Beautiful gradient notification with pencil icon
-
-### ⌨️ Keyboard Shortcuts
-- **Cmd+Shift+8** (Mac) / **Ctrl+Shift+8** (Windows/Linux): Toggle list item for current line
-
-### 🌓 Dark Mode Support
-- Automatically adapts to your system's light/dark mode preference
-- Smooth theme transitions
-- Beautiful UI in both modes
-
-### ☁️ Notion Integration
+### 🔗 Notion Integration Features
+- **Open in Notion** button (🔗 Notion) in the side panel toolbar
+- **View in Notion** button (View in Notion) in the dashboard for each note
+- Direct links to your Notion database entries
 - Notes stored in your personal Notion workspace
 - Access notes from anywhere (desktop, mobile, web)
 - Automatic page creation and updates
 - Full Notion database functionality
 
-- Import notes from backup files
-- Full backward compatibility with older export formats
+### 🌓 Dark Mode Support
+- Automatically adapts to your system's light/dark mode preference
+- Smooth theme transitions
+- Beautiful UI in both modes
+- Proper contrast and readability in all themes
+
+### ⌨️ Keyboard Shortcuts
+- **Cmd+Shift+8** (Mac) / **Ctrl+Shift+8** (Windows/Linux): Toggle list item for current line
 
 ## Installation
 
@@ -102,23 +114,28 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 ### Using the Dashboard
 
 - Click the "📊" chart icon in the side panel toolbar to open the Dashboard
-- Here you can view, search, and manage all your saved notes across all domains
+- **Open Website** - Visit the original webpage where you took the note
+- **View in Notion** - Open the note's entry directly in your Notion database
+- **Delete** - Remove the note permanently (archives it in Notion)
 
 ### Context Menu
 
 - Highlight text on any webpage
 - Right-click and select "Add selection to note" to append the text to the current note
+- Text is automatically formatted and saved
 
-### Export & Import
+### Opening Notes in Notion
 
-- **Export**: Click the "📥 Export" button to download all your notes as a JSON file
-- **Import**: Click the "📤 Import" button to restore notes from a previously exported JSON file
+- **From Side Panel**: Click the "🔗 Notion" button to open the current note in Notion
+- **From Dashboard**: Click "View in Notion" on any note card to open it directly in your Notion database
+- Notes are stored with their full database entry, including all properties
 
-### Domain-Based Behavior
+### Domain-Based Panel Behavior
 
-- Notes are organized by domain (e.g., all `example.com` pages share the same panel state)
-- When you enable notes for a domain, the panel becomes available for all tabs on that domain
-- Each URL still maintains its own unique note content
+- The side panel automatically opens for notes on enabled domains
+- When you switch to a different domain, the panel automatically closes
+- When you return to a domain where you've taken notes, the panel is ready to use
+- This keeps your browsing experience clean and focused
 
 ## Keyboard Shortcuts
 
@@ -129,33 +146,46 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 ## Data Storage
 
 ### Storage Method
-- Notes are stored in **Chrome Sync Storage** by default
-- This ensures notes persist when the extension is disabled (but not when removed)
-- Falls back to local storage if sync quota is exceeded
+- Notes are stored in **your Notion workspace** via the Notion API
+- Credentials (API key and database ID) are stored in Chrome local storage
+- No data is stored on any external servers - all communication is direct with Notion
 
 ### What Gets Saved
-- Note content (HTML format)
-- Page title (for better organization)
-- Domain enable/disable states
+- Note content (HTML format stored in Notion blocks)
+- URL (the webpage URL for the note)
+- Page title (the webpage title)
+- All stored in your personal Notion database
 
-### Backup Recommendations
-- Use the Export feature regularly to create backups
-- Export before removing the extension (data is cleared on removal)
-- Import after reinstalling to restore your notes
+### Why Notion?
+- Access your notes from any device (web, mobile, desktop)
+- Full Notion features available (sharing, collaboration, formatting, etc.)
+- Your data stays in your account - total privacy
+- Better than browser storage which is limited and device-specific
 
 ## Technical Details
 
 ### Architecture
-- **Manifest V3** compliant
-- **Service Worker** for background tasks
+- **Manifest V3** compliant modern extension
+- **Service Worker** (background.js) for domain management and API calls
 - **Side Panel API** for the note editor interface
+- **Notion API** (notion-service.js) for all data operations
 - **Contenteditable** for rich text editing
+- **Message Passing** between content scripts, side panel, and background worker
+
+### Key Files
+- **background.js** - Domain-based panel state management, Notion API routing
+- **sidepanel.js** - Note editor, formatting, auto-save, load state management
+- **notion-service.js** - Complete Notion API wrapper with schema detection
+- **dashboard.js** - Notes listing, search, delete functionality
+- **content.js** - Note existence detection for current URL
 
 ### Permissions
 - `sidePanel`: Required for the side panel interface
-- `storage`: Required for saving notes
+- `storage`: Required for saving Notion credentials
 - `tabs`: Required to detect current page and get page titles
+- `contextMenus`: Required for context menu "Add to note" feature
 - `<all_urls>`: Required to work on all websites
+- `https://api.notion.com/*`: Required to communicate with Notion API
 
 ### Browser Compatibility
 - ✅ Chrome 109+
@@ -203,6 +233,17 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Changelog
+
+### Version 2.0
+- ✨ **Complete Refactor** - Migrated from Chrome storage to Notion API
+- 🔗 Added "View in Notion" button in side panel and dashboard
+- 💾 Added smart save status indicator with 5 states (loading/saving/saved/unsaved/error)
+- 📊 Enhanced dashboard with direct Notion links for each note
+- 🚫 Removed import/export buttons (data now in Notion)
+- ⚙️ Added dynamic Notion database property detection
+- 🔄 Fixed URL display issue in dashboard
+- 🎯 Added domain-smart panel auto-close behavior
+- 📝 Updated all documentation with Notion setup instructions
 
 ### Version 1.8
 - Added Notes Dashboard for central management

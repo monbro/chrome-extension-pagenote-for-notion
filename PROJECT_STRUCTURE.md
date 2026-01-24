@@ -1,52 +1,109 @@
 # 📁 Project Structure - URL Context Notes v2.0
 
+Complete Chrome extension for URL-specific note-taking with Notion API integration.
+
 ```
 chrome-extension-sticky-notes-to-page/
 │
 ├── 📄 Core Extension Files
-│   ├── manifest.json                 ✅ Updated to v2.0, added Notion API permissions
-│   ├── background.js                 ✅ Refactored for Notion API
-│   ├── content.js                    ✅ Refactored for Notion API
+│   ├── manifest.json                 ✅ Manifest V3, Notion API permissions
+│   ├── background.js                 ✅ Service worker - Domain management, API routing
+│   ├── content.js                    ✅ Content script - URL detection
 │   │
-│   ├── 🎨 UI Files
-│   ├── sidepanel.html                ✅ Added notion-service.js import
-│   ├── sidepanel.js                  ✅ Complete rewrite for Notion
-│   ├── dashboard.html                ✅ Added notion-service.js import
-│   ├── dashboard.js                  ✅ Complete rewrite for Notion
-│   ├── notion-auth.html              ✨ NEW - Setup & authentication UI
-│   ├── style.css                     ✓ Unchanged
-│   └── content.css                   ✓ Unchanged (notification styles)
+│   ├── 🎨 UI & Editor
+│   ├── sidepanel.html                ✅ Note editor layout with save indicator
+│   ├── sidepanel.js                  ✅ NoteEditor class (~700 lines)
+│   ├── dashboard.html                ✅ Notes list/grid layout
+│   ├── dashboard.js                  ✅ Dashboard logic with Notion links
+│   ├── notion-auth.html              ✅ Setup & authentication UI
+│   ├── notion-auth.js                ✅ Auth form handler (external JS for CSP)
+│   ├── style.css                     ✅ Styles + dark mode + animations
+│   └── content.css                   ✓ Notification styles
 │
-├── 🔌 API Integration
-│   └── notion-service.js             ✨ NEW - Notion API wrapper (290+ lines)
+├── 🔌 API Integration & Services
+│   └── notion-service.js             ✅ Notion API wrapper (538 lines)
+│                                        - Database schema detection
+│                                        - Dynamic property detection
+│                                        - CRUD operations
+│                                        - Error handling
 │
 ├── 📚 Documentation
-│   ├── README.md                     ✅ Updated - New feature overview
-│   ├── NOTION_SETUP.md               ✨ NEW - Complete setup guide
-│   ├── REFACTORING_NOTES.md          ✨ NEW - Technical documentation
-│   └── REFACTORING_COMPLETE.md       ✨ NEW - Project completion summary
+│   ├── README.md                     ✅ Feature overview & usage guide
+│   ├── NOTION_SETUP.md               ✅ Setup guide with troubleshooting
+│   ├── PROJECT_STRUCTURE.md          ✅ This file
+│   ├── REFACTORING_NOTES.md          ✓ Technical deep-dive
+│   └── REFACTORING_COMPLETE.md       ✓ Project summary
 │
-└── 🖼️ Assets (if present)
-    └── icon.png                      ✓ Unchanged
+└── 🖼️ Assets
+    └── icon.png                      ✓ Extension icon
 ```
 
-## 📊 Statistics
+## 📊 Project Statistics
 
-### Files Created: 4
-- `notion-service.js` - 290+ lines of Notion API integration
-- `notion-auth.html` - 260+ lines of authentication UI
-- `NOTION_SETUP.md` - Complete user setup guide
-- `REFACTORING_NOTES.md` - Technical documentation
+### Current Version: 2.0
+- **Total Lines of Code**: ~2500+
+- **Files**: 16 total (8 source, 4 docs, 2 assets, manifest)
 
-### Files Modified: 8
-- `manifest.json` - Updated permissions and version
-- `background.js` - Notion API integration
-- `content.js` - Notion API integration
-- `sidepanel.js` - Complete rewrite (~600 lines updated)
-- `sidepanel.html` - Added script import
-- `dashboard.js` - Complete rewrite (~100 lines updated)
-- `dashboard.html` - Added script import
-- `README.md` - Feature list update
+### Key Components
+
+**Background Service Worker** (`background.js` - 544 lines)
+- Domain-based panel state management
+- Panel auto-close behavior
+- Message routing for API calls
+- Context menu handling
+- Tab lifecycle management
+
+**Note Editor** (`sidepanel.js` - 701 lines)
+- Rich text editing with formatting
+- Real-time save status indicator (5 states)
+- Auto-save with debouncing
+- Content loading state management
+- Notion integration buttons
+
+**Notion API Service** (`notion-service.js` - 538 lines)
+- Complete API wrapper with error handling
+- Database schema detection
+- Dynamic property detection (flexible database structure)
+- CRUD operations (create, read, update, delete)
+- Page content management
+
+**Dashboard** (`dashboard.js` - 100+ lines)
+- Notes grid display with card layout
+- Search and filter functionality
+- Direct Notion links (View in Notion)
+- Website opening (Open Website)
+- Delete functionality
+
+**Authentication** (`notion-auth.html/js` - 300+ lines)
+- Beautiful setup UI with gradient
+- Credential verification
+- Step-by-step instructions
+- Error messages and validation
+
+## 🔄 Recent Updates (v2.0)
+
+### Major Features Added
+- ✅ Smart save status indicator with 5 states (⏳⌛💾✅⭕❌)
+- ✅ "View in Notion" button in sidepanel and dashboard
+- ✅ Domain-smart panel auto-close behavior
+- ✅ Editor loading state (disabled until content loads)
+- ✅ Dynamic database property detection
+- ✅ Improved error handling and user feedback
+
+### UI/UX Improvements
+- ✅ Save status indicator with emoji and colors
+- ✅ Pulse animation during saving
+- ✅ Better loading state feedback
+- ✅ Improved dashboard with grid layout
+- ✅ Direct links to Notion database entries
+- ✅ Removed import/export buttons
+
+### Technical Improvements
+- ✅ Dynamic property name detection (case-insensitive)
+- ✅ Better domain tracking
+- ✅ Improved tab lifecycle handling
+- ✅ Enhanced error logging
+- ✅ CSP-compliant external script loading
 
 ### Files Unchanged: 3
 - `style.css` - Main styling
