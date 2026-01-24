@@ -23,7 +23,14 @@ You can use an existing database or create a new one. The extension will automat
 **Recommended properties:**
 - `Name` or `Title` - The page title (auto-detected as title type)
 - `URL` or similar - The webpage URL
-- Additional properties like `Tags`, `Category`, `Date` are all supported
+- `Created` - Notion date field (automatically managed by Notion) - Shows creation timestamp
+- `Modified` - Notion date field (automatically managed by Notion) - Shows last edit timestamp
+- Additional properties like `Tags`, `Category`, `Status` are all supported
+
+**Note about date fields:** Notion automatically populates and manages `Created` and `Modified` date fields. The extension will:
+- Automatically display these dates in the dashboard if they exist
+- Format them as readable dates (e.g., "Jan 24, 2026")
+- Preserve them when syncing notes (never modifies date fields)
 
 The extension automatically detects all properties in your database and uses the ones it needs.
 

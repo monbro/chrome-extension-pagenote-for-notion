@@ -26,6 +26,10 @@
     
     .card-preview { flex: 1; font-size: 0.9em; color: var(--text-secondary); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; margin-bottom: 10px; line-height: 1.5; }
     
+    .card-metadata { display: flex; gap: 12px; font-size: 0.8em; color: var(--text-tertiary); margin-bottom: 10px; flex-wrap: wrap; }
+    .card-date { display: flex; align-items: center; }
+    .card-date::before { content: '📅'; margin-right: 4px; }
+    
     .card-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: auto; }
     .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border-color-button); background: var(--bg-button); cursor: pointer; color: var(--text-secondary); font-size: 0.9em; transition: all 0.2s; }
     .btn:hover { background: var(--bg-button-hover); }

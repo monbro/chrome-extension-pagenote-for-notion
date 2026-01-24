@@ -350,7 +350,6 @@ class NoteEditor {
   async saveNote() {
     if (!this.currentUrl) return;
 
-    this.updateSaveIndicator('saving');
     this.isSaving = true;
 
     try {
@@ -367,31 +366,64 @@ class NoteEditor {
         console.debug('Could not get page title:', error);
       }
       
-      // Save to Notion
-      await notionService.saveNote(this.currentUrl, content, pageTitle);
+      // Show saving indicator
+      this.updateSaveIndicator('saving');
+      this.showStatus('Synchronisiere mit Notion...');
       
-      // Update saved baseline and indicator
-      this.lastSavedContent = content;
-      this.isSaving = false;
-      this.updateSaveIndicator('saved');
-      this.showStatus('Gespeichert');
+      // Cache locally first with timestamp
+      const noteData = {
+        id: null, // Will be set by API
+        title: pageTitle || this.currentUrl,
+        url: this.currentUrl,
+        content: content,
+        lastSaved: Date.now() // Track when we last saved locally
+      };
+      await notionService.cacheNote(this.currentUrl, noteData);
+      console.log('Note cached locally:', this.currentUrl);
+      
+      // Send save to background worker - it continues even if panel closes
+      chrome.runtime.sendMessage({
+        action: 'save_note_to_notion',
+        url: this.currentUrl,
+        content: content,
+        pageTitle: pageTitle
+      }, (response) => {
+        if (response?.success) {
+          // Only show success after background worker confirms API saved
+          console.log('Note saved to Notion by background:', this.currentUrl);
+          this.lastSavedContent = content;
+          this.isSaving = false;
+          this.updateSaveIndicator('saved');
+          this.showStatus('Gespeichert');
+        } else {
+          console.error('Background save failed:', response?.error);
+          this.isSaving = false;
+          this.updateSaveIndicator('error');
+          this.showStatus('Fehler beim Speichern zu Notion: ' + (response?.error || 'Unknown error'), true);
+        }
+      });
+      
     } catch (error) {
-      console.error('Error saving note:', error);
+      console.error('Error in saveNote:', error);
       this.isSaving = false;
       this.updateSaveIndicator('error');
       this.showStatus('Fehler beim Speichern', true);
     }
   }
 
-  showStatus(message, isError = false) {
+  showStatus(message, isError = false, isCache = false) {
     this.elements.statusMsg.textContent = message;
     this.elements.statusMsg.classList.toggle('error', isError);
+    this.elements.statusMsg.classList.toggle('cache', isCache);
     this.elements.statusMsg.classList.add('visible');
     
     setTimeout(() => {
       this.elements.statusMsg.classList.remove('visible');
       if (isError) {
         this.elements.statusMsg.classList.remove('error');
+      }
+      if (isCache) {
+        this.elements.statusMsg.classList.remove('cache');
       }
     }, 2000);
   }
@@ -412,27 +444,30 @@ class NoteEditor {
     try {
       this.currentUrl = url;
       
-      // Load note from Notion
-      const note = await notionService.getNoteByUrl(url);
-      
-      if (note) {
-        // Get the full content
-        const content = await notionService.getPageContent(note.id);
-        this.elements.editor.innerHTML = content || '';
-        this.lastSavedContent = content || '';
-        this.updateUrlDisplay(url, note.title);
+      // First, try to load from cache for instant display
+      const cachedNote = await notionService.getCachedNote(url);
+      if (cachedNote) {
+        console.log('Displaying cached note for:', url);
+        this.elements.editor.innerHTML = cachedNote.content || '';
+        this.elements.editor.classList.add('from-cache');
+        this.lastSavedContent = cachedNote.content || '';
+        this.updateUrlDisplay(url, cachedNote.title);
+        
+        // Enable editor with cache state
+        this.elements.editor.contentEditable = true;
+        this.elements.editor.style.opacity = '1';
+        this.elements.editor.style.cursor = 'text';
+        this.updateSaveIndicator('saved');
+        
+        // Add cache indicator
+        this.showStatus('Aus Speicher geladen...', false, true);
       } else {
-        // No note exists yet
-        this.elements.editor.innerHTML = '';
-        this.lastSavedContent = '';
-        this.updateUrlDisplay(url);
+        // No cache, show loading state
+        this.updateSaveIndicator('loading');
       }
       
-      // Enable editor and update indicator
-      this.elements.editor.contentEditable = true;
-      this.elements.editor.style.opacity = '1';
-      this.elements.editor.style.cursor = 'text';
-      this.updateSaveIndicator('saved');
+      // Now load from Notion API in background
+      this.loadNoteFromAPI(url);
     } catch (error) {
       console.error('Error loading note:', error);
       this.showStatus('Fehler beim Laden', true);
@@ -442,6 +477,58 @@ class NoteEditor {
       this.elements.editor.contentEditable = true;
       this.elements.editor.style.opacity = '1';
       this.elements.editor.style.cursor = 'text';
+    }
+  }
+
+  async loadNoteFromAPI(url) {
+    try {
+      // Load note from Notion API
+      const note = await notionService.getNoteByUrl(url);
+      
+      if (note) {
+        // Get the full content
+        const content = await notionService.getPageContent(note.id);
+        
+        // Cache the note
+        await notionService.cacheNote(url, {
+          id: note.id,
+          title: note.title,
+          url: url,
+          content: content || ''
+        });
+        
+        // Update UI with API data
+        this.elements.editor.innerHTML = content || '';
+        this.elements.editor.classList.remove('from-cache');
+        this.lastSavedContent = content || '';
+        this.updateUrlDisplay(url, note.title);
+      } else {
+        // No note exists yet
+        this.elements.editor.innerHTML = '';
+        this.elements.editor.classList.remove('from-cache');
+        this.lastSavedContent = '';
+        this.updateUrlDisplay(url);
+        
+        // Cache empty note
+        await notionService.cacheNote(url, {
+          id: null,
+          title: url,
+          url: url,
+          content: ''
+        });
+      }
+      
+      // Enable editor and update indicator
+      this.elements.editor.contentEditable = true;
+      this.elements.editor.style.opacity = '1';
+      this.elements.editor.style.cursor = 'text';
+      this.updateSaveIndicator('saved');
+      this.showStatus('Synchronisiert', false);
+    } catch (error) {
+      console.error('Error loading note from API:', error);
+      this.updateSaveIndicator('error');
+      this.showStatus('Fehler beim Synchronisieren', true);
+      // Editor should already be enabled from cache, keep it that way
     }
   }
 

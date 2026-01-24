@@ -154,7 +154,9 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 - Note content (HTML format stored in Notion blocks)
 - URL (the webpage URL for the note)
 - Page title (the webpage title)
-- All stored in your personal Notion database
+- Created date (Notion's creation timestamp in ISO 8601 format)
+- Modified date (Notion's last edited timestamp in ISO 8601 format)
+- All stored in your personal Notion database with automatic timestamping
 
 ### Why Notion?
 - Access your notes from any device (web, mobile, desktop)

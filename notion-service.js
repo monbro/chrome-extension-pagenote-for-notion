@@ -27,6 +27,34 @@ class NotionService {
   }
 
   /**
+   * Get a page by ID with all properties
+   */
+  async getPageById(pageId) {
+    if (!this.isAuthenticated()) {
+      throw new Error('Not authenticated with Notion');
+    }
+
+    try {
+      const response = await fetch(`${this.notionApiUrl}/pages/${pageId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Notion-Version': '2022-06-28'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get page: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting page by ID:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get database schema (property names and types)
    */
   async getDatabaseSchema() {
@@ -241,6 +269,26 @@ class NotionService {
         };
       }
 
+      // Add Created date if it exists
+      if (schema['Created']) {
+        const now = new Date().toISOString();
+        properties['Created'] = {
+          date: {
+            start: now
+          }
+        };
+      }
+
+      // Add Modified date if it exists
+      if (schema['Modified']) {
+        const now = new Date().toISOString();
+        properties['Modified'] = {
+          date: {
+            start: now
+          }
+        };
+      }
+
       const payload = {
         parent: {
           database_id: this.databaseId
@@ -282,7 +330,11 @@ class NotionService {
       }
 
       const data = await response.json();
-      return this.parsePageToNote(data);
+      console.log('Page created with ID:', data.id);
+      
+      // Fetch the full page to ensure we have all fields including timestamps
+      const fullPage = await this.getPageById(data.id);
+      return this.parsePageToNote(fullPage);
     } catch (error) {
       console.error('Error creating note in Notion:', error);
       throw error;
@@ -377,7 +429,44 @@ class NotionService {
         }
       }
 
-      return true;
+      // Update Modified date property if it exists in schema
+      try {
+        const schema = await this.getDatabaseSchema();
+        if (schema['Modified']) {
+          const now = new Date().toISOString();
+          const updateResponse = await fetch(`${this.notionApiUrl}/pages/${pageId}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Notion-Version': '2022-06-28',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              properties: {
+                'Modified': {
+                  date: {
+                    start: now
+                  }
+                }
+              }
+            })
+          });
+
+          if (!updateResponse.ok) {
+            console.warn('Failed to update Modified date:', updateResponse.statusText);
+            // Don't throw - content was updated, just the date failed
+          } else {
+            console.log('Updated Modified date for page:', pageId);
+          }
+        }
+      } catch (error) {
+        console.warn('Error updating Modified date:', error);
+        // Don't throw - content was updated successfully
+      }
+
+      // Fetch the full page to get updated timestamps
+      const fullPage = await this.getPageById(pageId);
+      return this.parsePageToNote(fullPage);
     } catch (error) {
       console.error('Error updating note in Notion:', error);
       throw error;
@@ -396,9 +485,9 @@ class NotionService {
       let note = await this.getNoteByUrl(url);
       
       if (note) {
-        // Update existing note
-        await this.updateNote(note.id, content);
-        return { id: note.id, ...note };
+        // Update existing note and return the updated note with fresh timestamps
+        const updatedNote = await this.updateNote(note.id, content);
+        return updatedNote;
       } else {
         // Create new note
         return await this.createNote(url, content, pageTitle);
@@ -521,12 +610,18 @@ class NotionService {
       pageTitle = url;
     }
     
+    // Extract Notion date fields (ISO 8601 format)
+    const created = page.created_time || null;
+    const modified = page.last_edited_time || null;
+    
     // Content will be fetched separately when needed
     return {
       id: page.id,
       url: url,
       title: pageTitle,
-      content: '' // Will be populated when fetching full content
+      content: '', // Will be populated when fetching full content
+      created: created, // ISO 8601 timestamp
+      modified: modified // ISO 8601 timestamp
     };
   }
 
@@ -568,6 +663,111 @@ class NotionService {
     } catch (error) {
       console.error('Error getting page content:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Cache helpers for local storage
+   */
+
+  /**
+   * Get cached note for a URL
+   */
+  async getCachedNote(url) {
+    try {
+      const cacheKey = `note_cache:${url}`;
+      const data = await chrome.storage.local.get(cacheKey);
+      const cached = data[cacheKey];
+      if (cached) {
+        return JSON.parse(cached);
+      }
+      return null;
+    } catch (error) {
+      console.debug('Error getting cached note:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Cache a note to local storage - won't overwrite if existing cache is newer
+   */
+  async cacheNote(url, noteData) {
+    try {
+      const cacheKey = `note_cache:${url}`;
+      
+      // Add timestamp if not provided
+      if (!noteData.lastSaved) {
+        noteData.lastSaved = Date.now();
+      }
+      
+      // Check if we already have a cached version
+      const data = await chrome.storage.local.get(cacheKey);
+      const existing = data[cacheKey] ? JSON.parse(data[cacheKey]) : null;
+      
+      // Only overwrite if new data is newer or if there's no existing cache
+      if (!existing || !existing.lastSaved || noteData.lastSaved >= existing.lastSaved) {
+        await chrome.storage.local.set({
+          [cacheKey]: JSON.stringify(noteData)
+        });
+        console.log('Cached note:', url, 'timestamp:', noteData.lastSaved);
+      } else {
+        console.log('Skipped overwriting newer cache for:', url, 
+          'existing:', existing.lastSaved, 'new:', noteData.lastSaved);
+      }
+    } catch (error) {
+      console.debug('Error caching note:', error);
+    }
+  }
+
+  /**
+   * Get all cached notes
+   */
+  async getAllCachedNotes() {
+    try {
+      const data = await chrome.storage.local.get(null);
+      const cachedNotes = [];
+      
+      for (const [key, value] of Object.entries(data)) {
+        if (key.startsWith('note_cache:')) {
+          try {
+            cachedNotes.push(JSON.parse(value));
+          } catch (e) {
+            console.debug('Error parsing cached note:', e);
+          }
+        }
+      }
+      
+      return cachedNotes;
+    } catch (error) {
+      console.debug('Error getting cached notes:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Clear cache for a specific URL
+   */
+  async clearNoteCache(url) {
+    try {
+      const cacheKey = `note_cache:${url}`;
+      await chrome.storage.local.remove(cacheKey);
+    } catch (error) {
+      console.debug('Error clearing cache:', error);
+    }
+  }
+
+  /**
+   * Clear all caches
+   */
+  async clearAllCaches() {
+    try {
+      const data = await chrome.storage.local.get(null);
+      const keysToRemove = Object.keys(data).filter(key => key.startsWith('note_cache:'));
+      if (keysToRemove.length > 0) {
+        await chrome.storage.local.remove(keysToRemove);
+      }
+    } catch (error) {
+      console.debug('Error clearing all caches:', error);
     }
   }
 }

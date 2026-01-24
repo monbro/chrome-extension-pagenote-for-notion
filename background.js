@@ -90,6 +90,41 @@ class SidePanelManager {
 
     // Handle messages from content script (e.g. opening panel from notification)
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // Handle save_note_to_notion - runs in background so it survives panel closing
+      if (message.action === 'save_note_to_notion') {
+        (async () => {
+          try {
+            console.log('Background: Saving note to Notion:', message.url);
+            await notionService.init();
+            
+            const savedNote = await notionService.saveNote(message.url, message.content, message.pageTitle);
+            
+            // Update cache with ID from API response
+            await notionService.cacheNote(message.url, {
+              id: savedNote?.id,
+              title: message.pageTitle || message.url,
+              url: message.url,
+              content: message.content,
+              lastSaved: Date.now() // Add timestamp
+            });
+            
+            console.log('Background: Note saved successfully:', message.url);
+            sendResponse({ 
+              success: true, 
+              note: savedNote,
+              lastSaved: Date.now()
+            });
+          } catch (error) {
+            console.error('Background: Error saving note:', error);
+            sendResponse({ 
+              success: false, 
+              error: error.message 
+            });
+          }
+        })();
+        return true; // Keep channel open for async response
+      }
+
       // Handle check_note_exists from content script
       if (message.action === 'check_note_exists') {
         (async () => {

@@ -283,6 +283,35 @@ body {
   font-weight: 500;
 }
 
+#status.cache {
+  color: var(--text-secondary);
+  opacity: 0.8;
+  font-style: italic;
+}
+
+/* ===== Cache Content Indicator ===== */
+#note-editor.from-cache {
+  opacity: 0.85;
+  background-color: var(--bg-tertiary);
+}
+
+.note-card.from-cache {
+  opacity: 0.8;
+  position: relative;
+}
+
+.note-card.from-cache::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent 90%, rgba(0, 0, 0, 0.02) 100%);
+  pointer-events: none;
+  border-radius: 6px;
+}
+
 /* ===== Save Indicator Styles ===== */
 #save-indicator {
   display: inline-block;
