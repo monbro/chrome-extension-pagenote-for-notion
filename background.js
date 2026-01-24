@@ -68,7 +68,26 @@ class SidePanelManager {
     // Handle messages from content script (e.g. opening panel from notification)
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'open_side_panel' && sender.tab) {
-        this.handleOpenPanelRequest(sender.tab);
+        const tabId = sender.tab.id;
+        const windowId = sender.tab.windowId;
+        
+        // Enable the panel for this tab first
+        chrome.sidePanel.setOptions({
+          tabId: tabId,
+          path: 'sidepanel.html',
+          enabled: true
+        }).then(() => {
+          // Now open it while still in the gesture context
+          return chrome.sidePanel.open({ tabId: tabId, windowId: windowId });
+        }).then(() => {
+          console.log('Panel opened successfully');
+          sendResponse({ success: true });
+        }).catch((error) => {
+          console.error('Error opening panel:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+        
+        return true; // Keep the channel open for async response
       }
     });
   }
@@ -133,17 +152,27 @@ class SidePanelManager {
 
   async handleOpenPanelRequest(tab) {
     try {
+      console.log('handleOpenPanelRequest called with:', tab);
+      const tabId = tab.id || tab.tabId;
+      const windowId = tab.windowId;
+      
+      console.log('Attempting to open panel for tabId:', tabId, 'windowId:', windowId);
+      
       // Enable panel for this tab specifically so it can be opened
       await chrome.sidePanel.setOptions({
-        tabId: tab.id,
+        tabId: tabId,
         path: 'sidepanel.html',
         enabled: true
       });
       
+      console.log('Panel options set, now opening panel');
+      
       // Open the panel
-      await chrome.sidePanel.open({ tabId: tab.id, windowId: tab.windowId });
+      await chrome.sidePanel.open({ tabId: tabId, windowId: windowId });
+      console.log('Panel opened successfully');
     } catch (error) {
       console.error('Error opening panel from request:', error);
+      throw error;
     }
   }
 
