@@ -4,10 +4,15 @@
  * All tabs on the same domain share the panel open/close state
  */
 
+// Import Notion service
+importScripts('notion-service.js');
+
 class SidePanelManager {
   constructor() {
     this.enabledDomains = new Set();
     this.storageKey = 'enabledDomains';
+    this.panelOpenTabId = null; // Track which tab has the panel open
+    this.panelOpenDomain = null; // Track which domain the open panel is for
     this.init();
   }
 
@@ -38,6 +43,14 @@ class SidePanelManager {
     // Handle new tabs - check if domain has panel enabled
     chrome.tabs.onCreated.addListener((tab) => this.handleTabCreated(tab));
     
+    // Handle tab removed - clear panel tracking if it's the open tab
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      if (this.panelOpenTabId === tabId) {
+        this.panelOpenTabId = null;
+        this.panelOpenDomain = null;
+      }
+    });
+    
     // Handle tab activation - apply domain state
     chrome.tabs.onActivated.addListener((activeInfo) => this.handleTabActivated(activeInfo));
     
@@ -45,6 +58,16 @@ class SidePanelManager {
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.status === 'complete' && tab.url) {
         this.handleTabUpdated(tab);
+        // If panel is open on a different domain, close it
+        if (this.panelOpenDomain && tab.id === this.panelOpenTabId) {
+          const domain = this.extractDomain(tab.url);
+          if (domain !== this.panelOpenDomain) {
+            console.log('URL changed in panel tab from', this.panelOpenDomain, 'to', domain, '- closing panel');
+            this.closePanelForTab(tab.id, tab.windowId);
+            this.panelOpenTabId = null;
+            this.panelOpenDomain = null;
+          }
+        }
       }
     });
     
@@ -67,6 +90,27 @@ class SidePanelManager {
 
     // Handle messages from content script (e.g. opening panel from notification)
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // Handle check_note_exists from content script
+      if (message.action === 'check_note_exists') {
+        (async () => {
+          try {
+            await notionService.init();
+            if (!notionService.isAuthenticated()) {
+              sendResponse({ noteExists: false });
+              return;
+            }
+            
+            const note = await notionService.getNoteByUrl(message.url);
+            sendResponse({ noteExists: !!note });
+          } catch (error) {
+            console.error('Error checking note:', error);
+            sendResponse({ noteExists: false });
+          }
+        })();
+        return true; // Keep channel open for async response
+      }
+      
+      // Handle open_side_panel
       if (message.action === 'open_side_panel' && sender.tab) {
         const tabId = sender.tab.id;
         const windowId = sender.tab.windowId;
@@ -124,26 +168,30 @@ class SidePanelManager {
   async handleContextMenuClick(info, tab) {
     if (info.menuItemId === "add-to-note" && info.selectionText && tab.url) {
       try {
+        // Initialize Notion service
+        await notionService.init();
+        
+        if (!notionService.isAuthenticated()) {
+          console.log('User not authenticated with Notion');
+          return;
+        }
+        
         const url = tab.url;
         const textToAdd = `<p>${info.selectionText}</p>`;
         
-        // Try to get existing note from sync
-        let data = await chrome.storage.sync.get(url);
-        let currentNote = data[url] || "";
+        // Get existing note or create new one
+        let note = await notionService.getNoteByUrl(url);
+        let currentContent = '';
         
-        // If not in sync, check local (fallback logic similar to sidepanel.js)
-        if (!currentNote) {
-          const localData = await chrome.storage.local.get(url);
-          if (localData[url]) {
-            currentNote = localData[url];
-          }
+        if (note) {
+          // Get existing content
+          currentContent = await notionService.getPageContent(note.id);
         }
-
-        const newNote = currentNote + textToAdd;
         
-        // Save back to sync (or local if quota exceeded logic could be added here)
-        await chrome.storage.sync.set({ [url]: newNote });
+        const newContent = currentContent + textToAdd;
         
+        // Save back to Notion
+        await notionService.saveNote(url, newContent, tab.title);
       } catch (error) {
         console.error('Error adding to note from context menu:', error);
       }
@@ -297,6 +345,17 @@ class SidePanelManager {
     if (!tab.url) return;
     
     const domain = this.extractDomain(tab.url);
+    
+    // If a new tab is created on a different domain, close the panel
+    if (this.panelOpenDomain && domain !== this.panelOpenDomain) {
+      console.log('New tab created on different domain:', domain, '- closing panel from domain:', this.panelOpenDomain);
+      if (this.panelOpenTabId) {
+        await this.closePanelForTab(this.panelOpenTabId, tab.windowId);
+      }
+      this.panelOpenTabId = null;
+      this.panelOpenDomain = null;
+    }
+    
     if (domain) {
       const enabled = this.enabledDomains.has(domain);
       await this.applyPanelStateToTab(tab.id, domain, enabled);
@@ -310,9 +369,29 @@ class SidePanelManager {
     try {
       const tab = await chrome.tabs.get(activeInfo.tabId);
       if (tab.url) {
+        const domain = this.extractDomain(tab.url);
+        
+        // If panel is open on a different domain, close it
+        if (this.panelOpenDomain && domain !== this.panelOpenDomain) {
+          console.log('Domain changed from', this.panelOpenDomain, 'to', domain, '- closing panel');
+          await this.closePanelForTab(this.panelOpenTabId, tab.windowId);
+          this.panelOpenTabId = null;
+          this.panelOpenDomain = null;
+        }
+        
         await this.handleTabUpdated(tab);
-        // Also ensure panel is ready for immediate opening
-        await this.ensurePanelReadyForTab(tab);
+        
+        // Ensure panel is ready if domain is enabled
+        if (domain && this.enabledDomains.has(domain)) {
+          await this.ensurePanelReadyForTab(tab);
+        } else if (!domain) {
+          // Special URL (chrome://, about:, etc), close the panel
+          if (this.panelOpenTabId && this.panelOpenTabId !== tab.id) {
+            await this.closePanelForTab(this.panelOpenTabId, tab.windowId);
+            this.panelOpenTabId = null;
+            this.panelOpenDomain = null;
+          }
+        }
       }
     } catch (error) {
       console.error('Error handling tab activation:', error);
@@ -354,6 +433,36 @@ class SidePanelManager {
     }
   }
   
+  // Helper to close panel for a specific tab
+  async closePanelForTab(tabId, windowId) {
+    try {
+      console.log('Attempting to close panel for tab:', tabId);
+      // Try the close method first (available in newer Chrome versions)
+      if (chrome.sidePanel && chrome.sidePanel.close) {
+        await chrome.sidePanel.close({ tabId: tabId, windowId: windowId });
+        console.log('Panel closed successfully');
+      } else {
+        // Fallback: disable the panel for this tab
+        console.log('sidePanel.close not available, disabling panel instead');
+        await chrome.sidePanel.setOptions({
+          tabId: tabId,
+          enabled: false
+        });
+      }
+    } catch (error) {
+      // Try disabling as fallback if close fails
+      try {
+        console.log('Close failed, trying to disable panel:', error.message);
+        await chrome.sidePanel.setOptions({
+          tabId: tabId,
+          enabled: false
+        });
+      } catch (disableError) {
+        console.debug('Could not disable panel for tab:', tabId, disableError.message);
+      }
+    }
+  }
+
   // Helper to enable panel for a tab immediately (for new domains)
   async enablePanelForTabImmediately(tabId) {
     try {
@@ -408,6 +517,10 @@ class SidePanelManager {
         // Enable for all other tabs with this domain
         await this.applyDomainStateToAllTabs(domain, true);
         
+        // Track that panel is now open for this domain
+        this.panelOpenTabId = tab.id;
+        this.panelOpenDomain = domain;
+        
         // Now manually open the panel (since this is the "enable" click)
         // The next click will use Chrome's auto-open
         try {
@@ -415,9 +528,11 @@ class SidePanelManager {
         } catch (error) {
           // Might fail if Chrome is already trying to open it, that's OK
         }
+      } else {
+        // Domain is already enabled - track that panel was opened
+        this.panelOpenTabId = tab.id;
+        this.panelOpenDomain = domain;
       }
-      // If domain is already enabled, Chrome will handle open/close automatically
-      // due to openPanelOnActionClick: true
     } catch (error) {
       console.error('Error in handleActionClick:', error);
     }

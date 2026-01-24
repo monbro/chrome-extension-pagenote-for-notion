@@ -283,6 +283,29 @@ body {
   font-weight: 500;
 }
 
+/* ===== Save Indicator Styles ===== */
+#save-indicator {
+  display: inline-block;
+  font-size: 16px;
+  margin-left: 8px;
+  transition: all 0.3s ease;
+  cursor: default;
+  user-select: none;
+}
+
+#save-indicator[data-saving="true"] {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 /* ===== Scrollbar Styles ===== */
 #note-editor::-webkit-scrollbar {
   width: 8px;

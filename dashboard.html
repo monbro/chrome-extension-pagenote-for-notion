@@ -31,6 +31,8 @@
     .btn:hover { background: var(--bg-button-hover); }
     .btn-danger { color: var(--error-color); border-color: var(--error-color); opacity: 0.8; }
     .btn-danger:hover { background: var(--bg-button-hover); opacity: 1; }
+    .open-notion-btn { color: #667eea; border-color: #667eea; }
+    .open-notion-btn:hover { background: rgba(102, 126, 234, 0.1); }
     
     .no-notes { grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-tertiary); background: var(--bg-secondary); border-radius: 8px; border: 1px dashed var(--border-color); }
   </style>
@@ -48,6 +50,7 @@
     </div>
   </div>
   
+  <script src="notion-service.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

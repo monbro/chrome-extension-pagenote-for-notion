@@ -1,15 +1,36 @@
 # URL Context Notes
 
-A Chrome/Brave extension that allows you to save and manage sticky notes for specific URLs. Each webpage gets its own dedicated note that persists across sessions, making it perfect for research, documentation, and keeping track of important information.
+A Chrome/Brave extension that allows you to save and manage sticky notes for specific URLs. Notes are stored in your **Notion workspace**, giving you access to them from anywhere!
 
-![Version](https://img.shields.io/badge/version-1.8-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0-blue.svg)
 ![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-green.svg)
+![Notion](https://img.shields.io/badge/Powered%20by-Notion%20API-black.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
+
+## ✨ What's New in v2.0
+
+🚀 **Notion Integration** - Your notes are now stored in your Notion workspace instead of browser storage
+☁️ **Cloud Sync** - Access your notes from any device
+🔐 **Better Privacy** - Your data stays in your Notion account
+📱 **Multi-Device** - View and edit notes from desktop, tablet, or mobile via Notion
+
+## Quick Setup
+
+1. **Create a Notion Integration** at [notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. **Set up your database** with properties: Name, URL, Page Title
+3. **Connect the integration** to your database
+4. **Get your credentials**:
+   - Internal Integration Token (starts with `secret_`)
+   - Database ID (from your database URL)
+5. **Open the extension** and click "Setup Notion Integration"
+6. **Paste your credentials** and you're done!
+
+📖 **[Detailed Setup Guide →](NOTION_SETUP.md)**
 
 ## Features
 
 ### 📝 URL-Specific Notes
-- Each URL has its own dedicated note
+- Each URL has its own dedicated note in your Notion database
 - Notes are automatically saved as you type
 - Domain-based organization - all tabs on the same domain share the panel state
 
@@ -27,10 +48,11 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 - View all your notes in one place
 - Search and filter notes by content, title, or URL
 - Delete old or unused notes
+- Each note links directly to the website
 
 ### 🔔 Smart Notifications
 - Subtle "Note available" indicator when visiting pages with existing notes
-- Click the notification to quickly open the side panel
+- Beautiful gradient notification with pencil icon
 
 ### ⌨️ Keyboard Shortcuts
 - **Cmd+Shift+8** (Mac) / **Ctrl+Shift+8** (Windows/Linux): Toggle list item for current line
@@ -40,14 +62,12 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 - Smooth theme transitions
 - Beautiful UI in both modes
 
-### 💾 Data Persistence
-- Notes stored in Chrome Sync storage (persists when extension is disabled)
-- Automatic migration from local to sync storage
-- Export/Import functionality for backup and restore
-- Page titles are saved alongside URLs for better organization
+### ☁️ Notion Integration
+- Notes stored in your personal Notion workspace
+- Access notes from anywhere (desktop, mobile, web)
+- Automatic page creation and updates
+- Full Notion database functionality
 
-### 📤 Export & Import
-- Export all notes as JSON file
 - Import notes from backup files
 - Full backward compatibility with older export formats
 

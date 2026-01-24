@@ -5,44 +5,52 @@ let allNotes = [];
 
 async function loadNotes() {
   try {
-    // Fetch from both storages to ensure we have everything
-    const syncData = await chrome.storage.sync.get(null);
-    const localData = await chrome.storage.local.get(null);
+    // Initialize Notion service
+    await notionService.init();
     
-    const notesMap = new Map();
+    if (!notionService.isAuthenticated()) {
+      document.getElementById('notes-list').innerHTML = `
+        <div style="text-align: center; padding: 40px; color: #666;">
+          <h2>🔗 Not Connected to Notion</h2>
+          <p>Please set up your Notion integration first.</p>
+          <a href="${chrome.runtime.getURL('notion-auth.html')}" target="_blank" style="
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 15px;
+          ">Setup Notion Integration</a>
+        </div>
+      `;
+      return;
+    }
     
-    // Helper to process data objects
-    const processData = (data) => {
-      Object.keys(data).forEach(key => {
-        // Filter for note keys (URLs)
-        if (key.startsWith('http') && !key.startsWith('title:')) {
-          const url = key;
-          const content = data[key];
-          const titleKey = `title:${url}`;
-          // Get title from data, or fallback to hostname
-          let title = data[titleKey];
-          if (!title) {
-            try {
-              title = new URL(url).hostname;
-            } catch (e) {
-              title = url;
-            }
-          }
-          
-          if (!notesMap.has(url)) {
-            notesMap.set(url, { url, content, title });
-          }
+    // Fetch all notes from Notion
+    const notes = await notionService.getAllNotes();
+    
+    // Fetch content for each note
+    const notesWithContent = await Promise.all(
+      notes.map(async (note) => {
+        try {
+          const content = await notionService.getPageContent(note.id);
+          return { ...note, content };
+        } catch (error) {
+          console.error('Error fetching content for note:', error);
+          return { ...note, content: '' };
         }
-      });
-    };
-
-    processData(syncData);
-    processData(localData); // Local acts as fallback/merge
-
-    allNotes = Array.from(notesMap.values());
+      })
+    );
+    
+    allNotes = notesWithContent;
     renderNotes(allNotes);
   } catch (error) {
     console.error('Error loading notes for dashboard:', error);
+    document.getElementById('notes-list').innerHTML = `
+      <div class="no-notes" style="color: #d32f2f;">Error loading notes: ${error.message}</div>
+    `;
   }
 }
 
@@ -72,14 +80,21 @@ function renderNotes(notes) {
       </div>
       <div class="card-preview">${previewText}</div>
       <div class="card-actions">
-        <button class="btn open-btn">Open Page</button>
+        <button class="btn open-web-btn">Open Website</button>
+        <button class="btn open-notion-btn">View in Notion</button>
         <button class="btn btn-danger delete-btn">Delete</button>
       </div>
     `;
     
     // Add event listeners
-    card.querySelector('.open-btn').addEventListener('click', () => {
+    card.querySelector('.open-web-btn').addEventListener('click', () => {
       chrome.tabs.create({ url: note.url });
+    });
+    
+    card.querySelector('.open-notion-btn').addEventListener('click', () => {
+      // Open the Notion page directly
+      const notionUrl = `https://www.notion.so/${note.id.replace(/-/g, '')}`;
+      chrome.tabs.create({ url: notionUrl });
     });
     
     card.querySelector('.delete-btn').addEventListener('click', async () => {
@@ -103,9 +118,18 @@ function filterNotes(e) {
 }
 
 async function deleteNote(url) {
-  await chrome.storage.sync.remove([url, `title:${url}`]);
-  await chrome.storage.local.remove([url, `title:${url}`]);
-  await loadNotes(); // Reload to refresh list
+  try {
+    // Find the note by URL
+    const note = allNotes.find(n => n.url === url);
+    if (note && note.id) {
+      await notionService.deleteNote(note.id);
+      // Reload notes
+      await loadNotes();
+    }
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    alert('Error deleting note: ' + error.message);
+  }
 }
 
 function escapeHtml(text) {

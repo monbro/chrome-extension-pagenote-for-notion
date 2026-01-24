@@ -3,22 +3,17 @@
   try {
     const currentUrl = window.location.href;
     
-    // Check sync storage first
-    let data = await chrome.storage.sync.get(currentUrl);
-    let content = data[currentUrl];
-
-    // Fallback to local storage if not found
-    if (!content) {
-      data = await chrome.storage.local.get(currentUrl);
-      content = data[currentUrl];
-    }
-
-    // If content exists and is not empty (stripping HTML tags)
-    if (content && stripHtml(content).trim().length > 0) {
-      showNotification();
-    }
+    // Send message to background worker to check if note exists
+    chrome.runtime.sendMessage(
+      { action: 'check_note_exists', url: currentUrl },
+      (response) => {
+        if (response && response.noteExists) {
+          showNotification();
+        }
+      }
+    );
   } catch (error) {
-    // Fail silently
+    console.error('Error checking for note:', error);
   }
 })();
 

@@ -8,6 +8,8 @@ class NoteEditor {
     this.currentUrl = '';
     this.saveTimeout = null;
     this.debounceDelay = 500; // ms
+    this.isSaving = false;
+    this.lastSavedContent = '';
     
     this.elements = {
       editor: document.getElementById('note-editor'),
@@ -15,8 +17,8 @@ class NoteEditor {
       domainLabel: document.getElementById('domain-label'),
       statusMsg: document.getElementById('status'),
       infoBtn: document.getElementById('close-btn'),
-      exportBtn: document.getElementById('export-btn'),
-      importBtn: document.getElementById('import-btn')
+      viewNotionBtn: document.getElementById('view-notion-btn'),
+      saveIndicator: document.getElementById('save-indicator')
     };
 
     this.init();
@@ -24,7 +26,20 @@ class NoteEditor {
 
   async init() {
     this.setupEventListeners();
-    await this.migrateFromLocalStorage();
+    await notionService.init();
+    
+    // Disable editor until content is loaded
+    this.elements.editor.contentEditable = false;
+    this.elements.editor.style.opacity = '0.5';
+    this.elements.editor.style.cursor = 'wait';
+    this.updateSaveIndicator('loading');
+    
+    // Check if user is authenticated with Notion
+    if (!notionService.isAuthenticated()) {
+      this.showAuthPrompt();
+      return;
+    }
+    
     this.loadCurrentTabNote();
     this.setupPlaceholder();
     this.injectDashboardButton();
@@ -35,7 +50,7 @@ class NoteEditor {
       // Migrate all notes from local to sync storage
       const localData = await chrome.storage.local.get(null);
       const notesToMigrate = {};
-      const noteKeys = ['enabledDomains']; // Keys to exclude
+      const noteKeys = ['enabledDomains', 'notionApiKey', 'notionDatabaseId']; // Keys to exclude
       
       Object.keys(localData).forEach(key => {
         if (!noteKeys.includes(key) && key.startsWith('http')) {
@@ -64,6 +79,41 @@ class NoteEditor {
     }
   }
 
+  showAuthPrompt() {
+    this.elements.editor.style.display = 'none';
+    const authPrompt = document.createElement('div');
+    authPrompt.id = 'auth-prompt';
+    authPrompt.style.cssText = `
+      padding: 20px;
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+      line-height: 1.6;
+    `;
+    authPrompt.innerHTML = `
+      <h2 style="color: #333; margin-bottom: 15px; font-size: 18px;">🔗 Connect to Notion</h2>
+      <p style="margin-bottom: 10px;">To use this extension, you need to connect it to your Notion workspace.</p>
+      <p style="margin-bottom: 20px;">Click the button below to set up your credentials.</p>
+      <button id="open-auth-btn" style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+      ">Setup Notion Integration</button>
+    `;
+    
+    const container = document.querySelector('[data-testid="sidepanel"]') || this.elements.editor.parentNode;
+    container.insertBefore(authPrompt, this.elements.editor);
+    
+    document.getElementById('open-auth-btn').addEventListener('click', () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('notion-auth.html') });
+    });
+  }
+
   setupPlaceholder() {
     const placeholder = this.elements.editor.getAttribute('data-placeholder');
     if (placeholder) {
@@ -73,8 +123,8 @@ class NoteEditor {
 
   injectDashboardButton() {
     // Find the toolbar by looking for one of the existing buttons
-    const exportBtn = this.elements.exportBtn;
-    if (exportBtn && exportBtn.parentNode) {
+    const viewNotionBtn = this.elements.viewNotionBtn;
+    if (viewNotionBtn && viewNotionBtn.parentNode) {
       const dashboardBtn = document.createElement('button');
       dashboardBtn.id = 'dashboard-btn';
       dashboardBtn.innerHTML = '📊'; // Chart icon
@@ -85,8 +135,8 @@ class NoteEditor {
         chrome.runtime.openOptionsPage();
       });
       
-      // Insert before the export button
-      exportBtn.parentNode.insertBefore(dashboardBtn, exportBtn);
+      // Insert before the view notion button
+      viewNotionBtn.parentNode.insertBefore(dashboardBtn, viewNotionBtn);
     }
   }
 
@@ -125,29 +175,13 @@ class NoteEditor {
       this.elements.infoBtn.addEventListener('click', () => this.showInfo());
     }
 
-    // Export button
-    if (this.elements.exportBtn) {
-      this.elements.exportBtn.addEventListener('click', () => this.exportNotes());
-    }
-
-    // Import button
-    if (this.elements.importBtn) {
-      this.elements.importBtn.addEventListener('click', () => this.handleImportClick());
+    // View in Notion button
+    if (this.elements.viewNotionBtn) {
+      this.elements.viewNotionBtn.addEventListener('click', () => this.openInNotion());
     }
 
     // Keyboard shortcuts
     this.elements.editor.addEventListener('keydown', (e) => this.handleKeyDown(e));
-
-    // Listen for storage changes (e.g. from Context Menu additions)
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (this.currentUrl && changes[this.currentUrl]) {
-        const newValue = changes[this.currentUrl].newValue;
-        // Only update if the content is actually different to avoid cursor jumping
-        if (newValue !== this.elements.editor.innerHTML) {
-          this.elements.editor.innerHTML = newValue || '';
-        }
-      }
-    });
   }
 
   formatText(command) {
@@ -297,6 +331,11 @@ class NoteEditor {
   handleInput() {
     if (!this.currentUrl) return;
 
+    // Check if content has changed from last save
+    if (this.elements.editor.innerHTML !== this.lastSavedContent) {
+      this.updateSaveIndicator('unsaved');
+    }
+
     // Clear existing timeout
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
@@ -310,6 +349,9 @@ class NoteEditor {
 
   async saveNote() {
     if (!this.currentUrl) return;
+
+    this.updateSaveIndicator('saving');
+    this.isSaving = true;
 
     try {
       const content = this.elements.editor.innerHTML;
@@ -325,45 +367,19 @@ class NoteEditor {
         console.debug('Could not get page title:', error);
       }
       
-      // Prepare data to save
-      const dataToSave = { [this.currentUrl]: content };
+      // Save to Notion
+      await notionService.saveNote(this.currentUrl, content, pageTitle);
       
-      // Save title separately with prefix
-      if (pageTitle) {
-        const titleKey = `title:${this.currentUrl}`;
-        dataToSave[titleKey] = pageTitle;
-      }
-      
-      // Use sync storage for persistence across extension disable/enable
-      await chrome.storage.sync.set(dataToSave);
+      // Update saved baseline and indicator
+      this.lastSavedContent = content;
+      this.isSaving = false;
+      this.updateSaveIndicator('saved');
       this.showStatus('Gespeichert');
     } catch (error) {
       console.error('Error saving note:', error);
-      // If sync storage quota exceeded, fall back to local storage
-      if (error.message && error.message.includes('QUOTA_BYTES')) {
-        try {
-          const content = this.elements.editor.innerHTML;
-          const dataToSave = { [this.currentUrl]: content };
-          
-          // Try to get and save title
-          try {
-            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tabs[0]?.title) {
-              const titleKey = `title:${this.currentUrl}`;
-              dataToSave[titleKey] = tabs[0].title;
-            }
-          } catch (titleError) {
-            // Ignore title error in fallback
-          }
-          
-          await chrome.storage.local.set(dataToSave);
-          this.showStatus('Gespeichert (lokal)');
-        } catch (localError) {
-          this.showStatus('Fehler beim Speichern', true);
-        }
-      } else {
-        this.showStatus('Fehler beim Speichern', true);
-      }
+      this.isSaving = false;
+      this.updateSaveIndicator('error');
+      this.showStatus('Fehler beim Speichern', true);
     }
   }
 
@@ -385,40 +401,47 @@ class NoteEditor {
     if (!url || url.startsWith('chrome://') || url.startsWith('brave://') || 
         url.startsWith('edge://') || url.startsWith('about:')) {
       this.elements.editor.innerHTML = '';
+      this.elements.editor.contentEditable = false;
       this.elements.urlLabel.textContent = 'Nicht verfügbar für diese Seite';
       this.elements.domainLabel.textContent = 'Notizen';
       this.currentUrl = '';
+      this.updateSaveIndicator('loading');
       return;
     }
 
     try {
       this.currentUrl = url;
       
-      // Load note content and title
-      const titleKey = `title:${url}`;
-      let data = await chrome.storage.sync.get([url, titleKey]);
+      // Load note from Notion
+      const note = await notionService.getNoteByUrl(url);
       
-      if (!data[url]) {
-        // Check local storage for migration
-        const localData = await chrome.storage.local.get([url, titleKey]);
-        if (localData[url]) {
-          // Migrate from local to sync
-          const migrateData = { [url]: localData[url] };
-          if (localData[titleKey]) {
-            migrateData[titleKey] = localData[titleKey];
-          }
-          await chrome.storage.sync.set(migrateData);
-          data = migrateData;
-        }
+      if (note) {
+        // Get the full content
+        const content = await notionService.getPageContent(note.id);
+        this.elements.editor.innerHTML = content || '';
+        this.lastSavedContent = content || '';
+        this.updateUrlDisplay(url, note.title);
+      } else {
+        // No note exists yet
+        this.elements.editor.innerHTML = '';
+        this.lastSavedContent = '';
+        this.updateUrlDisplay(url);
       }
       
-      this.elements.editor.innerHTML = data[url] || '';
-      
-      // Update display with URL and title if available
-      this.updateUrlDisplay(url, data[titleKey]);
+      // Enable editor and update indicator
+      this.elements.editor.contentEditable = true;
+      this.elements.editor.style.opacity = '1';
+      this.elements.editor.style.cursor = 'text';
+      this.updateSaveIndicator('saved');
     } catch (error) {
       console.error('Error loading note:', error);
       this.showStatus('Fehler beim Laden', true);
+      this.elements.editor.innerHTML = '';
+      this.updateSaveIndicator('error');
+      // Still enable editor so user can retry
+      this.elements.editor.contentEditable = true;
+      this.elements.editor.style.opacity = '1';
+      this.elements.editor.style.cursor = 'text';
     }
   }
 
@@ -442,6 +465,48 @@ class NoteEditor {
       } else {
         this.elements.urlLabel.textContent = url;
       }
+    }
+  }
+
+  updateSaveIndicator(status) {
+    const indicator = this.elements.saveIndicator;
+    
+    switch(status) {
+      case 'loading':
+        indicator.textContent = '⏳';
+        indicator.title = 'Lädt...';
+        indicator.style.color = '#999';
+        indicator.style.fontSize = '16px';
+        indicator.setAttribute('data-saving', 'true');
+        break;
+      case 'saving':
+        indicator.textContent = '💾';
+        indicator.title = 'Speichert...';
+        indicator.style.color = '#FF9800';
+        indicator.style.fontSize = '16px';
+        indicator.setAttribute('data-saving', 'true');
+        break;
+      case 'saved':
+        indicator.textContent = '✅';
+        indicator.title = 'Gespeichert';
+        indicator.style.color = '#4CAF50';
+        indicator.style.fontSize = '16px';
+        indicator.setAttribute('data-saving', 'false');
+        break;
+      case 'unsaved':
+        indicator.textContent = '⭕';
+        indicator.title = 'Nicht gespeichert';
+        indicator.style.color = '#FF5252';
+        indicator.style.fontSize = '16px';
+        indicator.setAttribute('data-saving', 'false');
+        break;
+      case 'error':
+        indicator.textContent = '❌';
+        indicator.title = 'Fehler beim Speichern';
+        indicator.style.color = '#F44336';
+        indicator.style.fontSize = '16px';
+        indicator.setAttribute('data-saving', 'false');
+        break;
     }
   }
 
@@ -586,17 +651,40 @@ class NoteEditor {
     input.click();
   }
 
+  openInNotion() {
+    if (!this.currentUrl) {
+      this.showStatus('Keine URL für diese Notiz verfügbar', true);
+      return;
+    }
+
+    // Find the note and open it in Notion
+    (async () => {
+      try {
+        const note = await notionService.getNoteByUrl(this.currentUrl);
+        if (note) {
+          const notionUrl = `https://www.notion.so/${note.id.replace(/-/g, '')}`;
+          chrome.tabs.create({ url: notionUrl });
+        } else {
+          this.showStatus('Notiz noch nicht in Notion gespeichert', true);
+        }
+      } catch (error) {
+        console.error('Error opening note in Notion:', error);
+        this.showStatus('Fehler beim Öffnen der Notion-Seite', true);
+      }
+    })();
+  }
+
   showInfo() {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const shortcutKey = isMac ? 'Cmd' : 'Ctrl';
     
-    const message = `URL Context Notes v1.7\n\n` +
-      `Speichern Sie Notizen für jede URL.\n` +
-      `Notizen werden automatisch gespeichert.\n\n` +
+    const message = `URL Context Notes v2.0\n\n` +
+      `Speichern Sie Notizen für jede URL in Notion.\n` +
+      `Notizen werden automatisch in Ihrer Notion-Datenbank gespeichert.\n\n` +
       `Formatierung: Verwenden Sie die Toolbar-Buttons für Textformatierung.\n\n` +
       `Tastenkürzel:\n` +
       `${shortcutKey}+Shift+8 - Listenpunkt für aktuelle Zeile ein/ausschalten\n\n` +
-      `Datenpersistenz: Notizen werden in Chrome Sync gespeichert und bleiben erhalten, wenn die Erweiterung deaktiviert wird. Für vollständige Sicherheit können Sie Ihre Notizen exportieren.`;
+      `Notion Integration: Klicken Sie auf den "🔗 Notion" Button, um diese Notiz in Ihrer Notion-Datenbank zu öffnen.`;
     
     alert(message);
   }

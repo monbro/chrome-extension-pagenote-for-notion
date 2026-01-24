@@ -9,7 +9,10 @@
   <div class="header">
     <div class="header-top">
       <h3 id="domain-label">Notizen</h3>
-      <button id="close-btn" title="Info">i</button>
+      <div class="header-actions">
+        <span id="save-indicator" class="save-indicator" title="Speicherstatus">⏳</span>
+        <button id="close-btn" title="Info">i</button>
+      </div>
     </div>
     <small id="url-label">Lädt...</small>
   </div>
@@ -22,13 +25,13 @@
     <button id="btn-outdent" title="Ausrücken">←</button>
     <button id="btn-indent" title="Einrücken">→</button>
     <div class="toolbar-separator"></div>
-    <button id="export-btn" title="Notizen exportieren">📥 Export</button>
-    <button id="import-btn" title="Notizen importieren">📤 Import</button>
+    <button id="view-notion-btn" title="In Notion ansehen">🔗 Notion</button>
   </div>
 
   <div id="note-editor" contenteditable="true" data-placeholder="Notiz für diese URL..."></div>
 
   <div id="status">Gespeichert</div>
 </body>
+<script src="notion-service.js"></script>
 <script src="sidepanel.js"></script>
 </html>
