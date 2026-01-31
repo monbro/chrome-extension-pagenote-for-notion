@@ -7,6 +7,8 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 ![Notion](https://img.shields.io/badge/Powered%20by-Notion%20API-black.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
+![PageNote for Notion](screenshot.png)
+
 ## ✨ What's New in v2.0
 
 🚀 **Notion Integration** - Your notes are now stored in your Notion workspace instead of browser storage
