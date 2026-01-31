@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "URL Context Notes",
+  "name": "PageNote for Notion",
   "version": "2.0",
   "permissions": ["sidePanel", "storage", "tabs", "contextMenus"],
   "host_permissions": ["<all_urls>", "https://api.notion.com/*"],

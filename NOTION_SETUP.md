@@ -1,4 +1,4 @@
-# URL Context Notes - Notion Integration Setup
+# PageNote for Notion - Notion Integration Setup
 
 This extension uses **Notion API** to store your notes. This allows you to access your notes from anywhere, on any device!
 
@@ -8,7 +8,7 @@ This extension uses **Notion API** to store your notes. This allows you to acces
 
 1. Go to [Notion My Integrations](https://www.notion.so/my-integrations)
 2. Click "Create new integration"
-3. Name it "URL Context Notes" (or whatever you prefer)
+3. Name it "PageNote for Notion" (or whatever you prefer)
 4. Click "Submit"
 5. Copy your **Internal Integration Token** (starts with `secret_`)
    - **Keep this safe!** This is your API key

@@ -765,7 +765,7 @@ class NoteEditor {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const shortcutKey = isMac ? 'Cmd' : 'Ctrl';
     
-    const message = `URL Context Notes v2.0\n\n` +
+    const message = `PageNote for Notion v2.0\n\n` +
       `Speichern Sie Notizen für jede URL in Notion.\n` +
       `Notizen werden automatisch in Ihrer Notion-Datenbank gespeichert.\n\n` +
       `Formatierung: Verwenden Sie die Toolbar-Buttons für Textformatierung.\n\n` +

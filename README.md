@@ -1,4 +1,4 @@
-# URL Context Notes
+# PageNote for Notion
 
 A Chrome/Brave extension that allows you to save and manage sticky notes for specific URLs. Notes are stored in your **Notion workspace**, giving you access to them from anywhere!
 
@@ -91,7 +91,7 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 2. Open Chrome/Brave and navigate to `chrome://extensions/` (or `brave://extensions/`)
 3. Enable "Developer mode" (toggle in top-right corner)
 4. Click "Load unpacked"
-5. Select the extension directory (`chrome-extension-sticky-notes-to-page`)
+5. Select the extension directory (`pagenote-for-notion`)
 
 ### From Chrome Web Store
 
@@ -200,7 +200,7 @@ A Chrome/Brave extension that allows you to save and manage sticky notes for spe
 ### Project Structure
 
 ```
-chrome-extension-sticky-notes-to-page/
+pagenote-for-notion/
 ├── manifest.json          # Extension manifest
 ├── background.js          # Service worker (domain management)
 ├── sidepanel.html         # Side panel UI

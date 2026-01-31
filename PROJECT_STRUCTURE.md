@@ -1,4 +1,4 @@
-# 📁 Project Structure - URL Context Notes v2.0
+# 📁 Project Structure - PageNote for Notion v2.0
 
 Complete Chrome extension for URL-specific note-taking with Notion API integration.
 
@@ -183,7 +183,7 @@ chrome-extension-sticky-notes-to-page/
 
 ### Database Properties
 ```
-Database: "URL Context Notes"
+Database: "PageNote for Notion"
 ├── Name (Title) - Auto-generated from URL or page title
 ├── URL (URL property) - Searchable link to webpage
 └── Page Title (Text) - HTML page title for reference
@@ -196,9 +196,9 @@ Content: Stored in page's first paragraph block
 
 ### Example Page
 ```
-Name:     "GitHub - chrome-extension-sticky-notes-to-page"
-URL:      "https://github.com/user/chrome-extension-sticky-notes-to-page"
-Page Title: "chrome-extension-sticky-notes-to-page - GitHub"
+Name:     "GitHub - pagenote-for-notion"
+URL:      "https://github.com/user/pagenote-for-notion"
+Page Title: "pagenote-for-notion - GitHub"
 Content:  "<h2>Installation Guide</h2><p>1. Clone repo...</p>"
 ```
 
